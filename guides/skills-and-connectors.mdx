@@ -1,0 +1,178 @@
+---
+title: "Agent Skills, MCP Connectors, and Progressive Disclosure"
+description: "How to discover, load, and govern Agent Skills and MCP/external connectors with progressive disclosure, namespacing, and permission boundaries."
+---
+
+Agent Skills and external connectors are the mechanisms that let an agent reach beyond its base instructions into domain-specific workflows, external data sources, and third-party APIs. Getting them right requires a deliberate loading strategy, strict governance, and clear boundaries — because every capability you expose also expands the attack surface and the potential for unintended actions.
+
+## What Agent Skills Are
+
+A skill is reusable procedural knowledge packaged for progressive loading. It helps an agent handle a class of tasks without embedding every workflow instruction in the main prompt. Skills are appropriate for repeatable workflows, domain-specific procedures, organizational conventions, output templates, validation checklists, gotchas the model would otherwise miss, and reusable reference material. They are not appropriate for one-off task instructions.
+
+A portable Agent Skill is a directory with at minimum a `SKILL.md` entrypoint:
+
+```text
+skill-name/
+  SKILL.md
+  references/process.md
+  references/checklist.md
+  references/templates.md
+```
+
+The `SKILL.md` file contains YAML frontmatter and Markdown instructions. The `name` field must match the parent directory, use lowercase letters, numbers, and hyphens, and stay within specification limits. Optional reference material is split into separate Markdown files and loaded only when needed.
+
+### Skill Metadata
+
+A strong `description` is essential because agents often load only `name` and `description` at startup. Write descriptions that:
+
+- Start with "Use this skill when..."
+- Describe user intent, not implementation internals
+- Mention adjacent terms users may use
+- Include scope boundaries so the skill does not trigger too broadly
+
+```yaml
+---
+name: renewal-risk-analysis
+description: Use this skill when analyzing renewal risk, account health, churn
+  likelihood, expansion blockers, or customer retention actions using usage,
+  support, contract, and sentiment data.
+---
+```
+
+### Skill Content Structure
+
+Use this structure inside `SKILL.md`:
+
+```markdown
+# [Skill Name]
+
+## When to use
+## Inputs to identify
+## Procedure
+## Tools to prefer
+## Tools to avoid
+## Validation
+## Output template
+## Gotchas
+```
+
+## Progressive Disclosure
+
+Exposing the full contents of every skill at startup wastes context and degrades cache hit rate. Use a three-stage loading model instead:
+
+<Steps>
+  <Step title="Startup">
+    Expose only skill `name` and `description` to the agent. The agent uses these to decide whether a skill is relevant to the current task.
+  </Step>
+  <Step title="Activation">
+    Load the `SKILL.md` core instructions when the agent determines the skill is relevant. Keep `SKILL.md` short — it is an entry point, not an encyclopedia.
+  </Step>
+  <Step title="On Demand">
+    Load focused reference files only when a specific sub-procedure is required. Reference triggers in `SKILL.md` should be explicit and conditional.
+  </Step>
+</Steps>
+
+Reference triggers must be precise. A good trigger tells the agent exactly when to load a file:
+
+<CodeGroup>
+```text Good trigger
+Read references/approval-policy.md when the workflow includes external sends,
+payments, permission changes, or destructive actions.
+```
+
+```text Bad trigger
+See references/ for more information.
+```
+</CodeGroup>
+
+## MCP and External Connectors
+
+MCP (Model Context Protocol) is a standard protocol for connecting an AI application to external data, tools, and workflow prompts. More broadly, treat any connector protocol as an external capability layer. Connector features map to three categories:
+
+```text
+resources: data/context the model or user can read
+prompts:   reusable templates or workflows
+tools:     executable functions or actions
+```
+
+Skills and MCP connectors differ in scope. A skill is a self-contained knowledge package authored for a specific domain, loaded into prompt context. An MCP connector exposes live external capabilities — APIs, data sources, services — that the agent calls at runtime. Both require governance, but connectors carry additional runtime risk because they interact with live systems.
+
+## External Connector Governance
+
+Treat connector tools as supply-chain artifacts. The governance checklist applies to both skills and connectors:
+
+<AccordionGroup>
+  <Accordion title="Source and identity">
+    Verify the source before installation. Confirm publisher identity. Pin versions where possible. Review before installation. Maintain an inventory and audit log. Have a removal and incident-response process.
+  </Accordion>
+  <Accordion title="Permission and scope">
+    Namespace every tool by server or source. Scope tools by user and tenant. Classify tools by risk. Apply least-privilege scopes. Use short-lived tokens. Require approval gates for risky operations. Never give the model raw credentials — let the connector manager use tokens internally and return redacted observations.
+  </Accordion>
+  <Accordion title="Runtime safety">
+    Treat tool annotations and descriptions from external servers as untrusted unless verified. Log every call. Disable tools when unused. Use sandboxing for executable assets. Apply resource limits.
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+  Tool annotations and descriptions from external servers can be wrong or malicious. The harness must not blindly trust them, and must validate arguments locally before execution.
+</Warning>
+
+## Tool Search and Deferred Loading
+
+For large connector ecosystems, never load hundreds of tool schemas into the prompt upfront. Provide a `search_tools` or `list_capabilities` mechanism and load schemas on demand:
+
+```text
+1. List available connector servers or domains
+2. Search or load only relevant tool summaries
+3. Load full schemas only for likely tools
+4. Execute only after validation and permission checks
+5. Return compact results or references
+```
+
+The tool search pattern exposes a single visible meta-tool:
+
+```text
+visible tool: search_connector_tools(query, detail_level)
+result:       tool names, short descriptions, risk classes
+next:         load_tool_schema(tool_name) for selected tools
+then:         call selected tool after permission check
+```
+
+Detail levels progress from coarse to fine:
+
+```text
+name_only
+name_and_description
+full_schema
+examples
+```
+
+## Attachment Strategy
+
+Attach a skill or connector to context when, and only when, the task matches its declared scope. The decision should be automatic (via a skill search mechanism) rather than manual. For connectors, follow staged exposure: list available servers, search for relevant tools, load schemas for likely candidates, execute after permission checks.
+
+When many tools or large data payloads are involved, consider using a sandboxed execution environment to interact with connector APIs programmatically. This lets you load only needed tool definitions, filter or aggregate large data before it reaches the model context, keep sensitive intermediate data outside the model, and reduce repeated tool-call loops. Use this only with sandboxing, resource limits, logging, and strict credential boundaries in place.
+
+## Anti-Patterns
+
+<CardGroup cols={2}>
+  <Card title="Capability overload" icon="layer-group">
+    Do not expose every skill and connector at once. Loading hundreds of tool schemas into the prompt destroys context efficiency and cache hit rate.
+  </Card>
+  <Card title="Missing namespacing" icon="tag">
+    Never expose connector tools without namespacing by server or source. Without namespaces, tool names collide and audit trails become meaningless.
+  </Card>
+  <Card title="Trusted external descriptions" icon="shield-exclamation">
+    Do not use external connector tool descriptions as trusted policy. They may be wrong, outdated, or injected by a malicious server.
+  </Card>
+  <Card title="Credential leakage" icon="key">
+    Never allow connector credentials to appear in model context. The connector manager must handle tokens internally and return only redacted observations.
+  </Card>
+</CardGroup>
+
+Additional anti-patterns to avoid:
+
+- A skill that silently grants broad permissions
+- Installing unreviewed skills from unknown sources
+- Letting a connector perform sampling or sub-agent behavior without user approval
+- Returning huge connector payloads directly to the model

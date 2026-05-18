@@ -1,0 +1,277 @@
+---
+title: "Building an MVP Agent Harness Blueprint from Scratch"
+description: "Generate a domain-specific MVP agent harness blueprint: domain intake, autonomy level, loop design, tool registry, permissions, and launch criteria."
+---
+
+An MVP agent harness blueprint is a concrete, minimal specification for a domain-specific agent that can do useful work safely from day one. The goal is not to design every future capability — it is the smallest safe version that creates real value, with explicit upgrade paths for each component. Starting small matters because broad autonomy, large tool surfaces, and complex multi-agent topologies amplify failure modes before the base harness has been measured or hardened. A well-designed MVP defines the objective, autonomy level, loop, tools, permissions, and launch gate before any code is written.
+
+## What an MVP harness includes
+
+Every MVP agent harness blueprint should specify the following fifteen elements:
+
+1. A domain objective and user persona
+2. A minimal but useful autonomy level
+3. A provider-neutral model-tool-observation loop
+4. A small typed tool registry
+5. A runtime permission matrix
+6. Structured tool results and errors
+7. A context builder with scoped instructions and retrieval
+8. Memory and durable state outside the prompt
+9. Auto-compaction behavior for long sessions
+10. Planning mode for high-risk or ambiguous work
+11. Goal-like loop behavior for longer objectives
+12. Skill and connector attachment strategy
+13. Prompt-cache-aware and cost-aware context layout
+14. Observability, evals, and launch criteria
+15. A minimal implementation path
+
+These elements apply equally to coding agents, research agents, support agents, finance agents, operations agents, legal agents, and any other domain.
+
+## Domain intake
+
+<Steps>
+  <Step title="Capture the domain">
+    Use the following template to capture the essential domain parameters. When the user gives only a domain name, infer reasonable defaults and state them explicitly rather than blocking the MVP on excessive clarification.
+
+    ```text
+    Domain:
+    Primary user:
+    Primary job-to-be-done:
+    Inputs:
+    Outputs:
+    Systems of record:
+    Risk level:
+    Allowed actions:
+    Forbidden actions:
+    Approval-required actions:
+    Completion signal:
+    ```
+  </Step>
+
+  <Step title="Choose an autonomy level">
+    Select the lowest autonomy level that still creates value. Default to Level 1 or Level 2 for most MVPs.
+
+    ```text
+    Level 0: Answer-only
+    - The agent reads context and answers.
+    - No actions beyond retrieval and summarization.
+
+    Level 1: Draft-only
+    - The agent drafts recommendations, messages, reports, plans, or updates.
+    - Humans commit all changes.
+
+    Level 2: Approval-gated action
+    - The agent proposes actions and pauses for approval before side effects.
+    - Good default for most business agents.
+
+    Level 3: Policy-bounded autonomous action
+    - The agent can execute low-risk actions inside explicit policy.
+    - Requires strong logging, evals, and rollback paths.
+
+    Level 4: Long-running autonomous objective
+    - The agent pursues a measurable goal across checkpoints and budgets.
+    - Use only after the base harness is reliable.
+    ```
+  </Step>
+
+  <Step title="Design the core loop">
+    Include an explicit, provider-neutral agentic loop with budgets and structured tool results for every outcome including denials, errors, and timeouts.
+
+    ```python
+    def run_agent(task, session):
+        session.add_event("user_message", task)
+
+        for step in range(session.max_steps):
+            context = context_builder.build(session)
+
+            if context.needs_compaction():
+                session = compactor.compact_and_rehydrate(session)
+                context = context_builder.build(session)
+
+            model_output = model.generate(
+                context=context,
+                tools=tool_registry.visible_tools(session),
+            )
+            session.add_event("model_output", model_output)
+
+            if model_output.final_answer:
+                return finalize(model_output.final_answer, session)
+
+            if not model_output.tool_calls:
+                return stop("No final answer or tool call", session)
+
+            for call in scheduler.order(model_output.tool_calls):
+                tool = tool_registry.get(call.name)
+                if tool is None:
+                    session.add_tool_result(call.id, error_result("unknown_tool"))
+                    continue
+
+                args = tool.validate(call.arguments)
+                decision = permissions.evaluate(tool, args, session)
+
+                if decision.type == "deny":
+                    result = denied_result(decision.reason)
+                elif decision.type == "approval_required":
+                    return pause_for_approval(call, decision, session)
+                elif decision.type == "sandbox":
+                    result = sandbox.execute(tool, args)
+                else:
+                    result = tool.execute(args)
+
+                result = result_limiter.enforce(result)
+                session.add_tool_result(call.id, result)
+
+        return stop("Step budget reached", session)
+    ```
+  </Step>
+
+  <Step title="Define the tool registry">
+    Start with a general-purpose baseline and add narrow domain-specific tools. Every tool should have a schema, risk class, timeout, and output limit.
+
+    ```yaml
+    tool: read_customer_account
+    purpose: Retrieve approved account profile fields for analysis.
+    risk_class: read_private_data
+    side_effects: none
+    permission: allow_with_user_scope
+    input_schema:
+      account_id: string
+    output_schema:
+      status: success | error
+      summary: string
+      account_ref: string
+      key_fields: object
+      redactions: array
+    limits:
+      timeout_seconds: 10
+      max_result_chars: 8000
+    ```
+
+    For risky actions, always split draft and commit into separate tools:
+
+    ```text
+    draft_customer_email  ->  send_customer_email
+    propose_crm_update    ->  apply_crm_update
+    prepare_refund        ->  issue_refund
+    draft_policy_change   ->  submit_policy_change
+    prepare_database_change -> apply_database_change
+    ```
+  </Step>
+
+  <Step title="Define the permission matrix">
+    Include an explicit permission matrix in every MVP:
+
+    ```text
+    Read approved public/internal resources:    allow within scope
+    Read private user/customer data:            allow only with user/session scope
+    Search external web:                        allow or restrict by policy
+    Draft report/message/recommendation:        allow
+    Write local draft/artifact:                 allow
+    Update internal record:                     approval-gated unless explicitly low-risk
+    Send external communication:                approval-gated
+    Financial action:                           approval + strong authentication
+    Legal/health/safety-sensitive action:       approval + specialist review where required
+    Delete/destructive action:                  deny by default or approval + recovery path
+    Identity/access change:                     approval + strong authentication
+    Shell/process/browser automation:           sandbox + allowlist + approval for risky operations
+    Connector installation:                     approval + security review + version pinning
+    ```
+  </Step>
+</Steps>
+
+## Worked example
+
+The following example shows a real domain intake and blueprint response for an account renewal risk agent.
+
+```text
+User  > Build an agent for account renewal risk. It should read CRM,
+        support tickets, and usage data, then draft renewal actions.
+
+Agent > Start with an approval-gated Level 2 harness.
+        The MVP has one job: produce a renewal-risk brief plus draft
+        next actions for a human account owner.
+
+        Core loop:
+          user/task -> context builder -> model call -> typed tool call
+          -> schema validation -> permission check -> execution or pause
+          -> structured observation -> next step or final brief
+
+        Minimal tools:
+          - read_account_profile      read_private_data
+          - list_support_tickets      read_private_data
+          - fetch_usage_summary       read_private_data
+          - draft_customer_email      draft_external_message
+          - request_approval          approval_gate
+
+        Launch gate:
+          20 historical accounts, trace review, no unapproved external
+          sends, and human acceptance on at least 80% of draft actions.
+```
+
+## Common output template
+
+Use this structure when generating a domain-specific MVP agent blueprint:
+
+```markdown
+# MVP Agent Harness Blueprint: [domain/use case]
+
+## 1. Objective
+[What the agent does, for whom, and what output counts as useful.]
+
+## 2. MVP scope and assumptions
+[Smallest useful version, explicit assumptions, non-goals, and deferred capabilities.]
+
+## 3. Autonomy and risk level
+[Answer-only, draft-only, approval-gated action, or policy-bounded action.]
+
+## 4. Core agentic loop
+[Provider-neutral loop, model calls, tool calls, observations, retries, budgets, and stopping.]
+
+## 5. Context and instruction architecture
+[System/developer/user instructions, scoped domain memory, source-of-truth retrieval, trust boundaries.]
+
+## 6. Tool registry
+[Minimal tools, schemas, risk classes, permission policy, structured outputs.]
+
+## 7. Planning behavior
+[When the agent must plan, what is allowed during planning, plan artifact, approval to execute.]
+
+## 8. Goal-like loop behavior
+[When a longer objective can run, budget, checkpoints, progress log, done condition, stop rules.]
+
+## 9. Context, memory, and auto-compaction
+[Durable state, retrieval, compaction triggers, handoff summary, rehydrated artifacts.]
+
+## 10. Skills and connectors
+[Reusable skills, MCP/external connectors, progressive disclosure, namespacing, connector permissions.]
+
+## 11. Prompt caching and cost-aware context
+[Stable prefix, dynamic suffix, cache telemetry, result-size limits, summarization strategy.]
+
+## 12. Safety and approval policy
+[Prompt injection handling, secrets, sandboxing, human review, audit logs.]
+
+## 13. Observability and evals
+[Trace events, metrics, test cases, failure probes, launch gates.]
+
+## 14. Minimal implementation path
+[Build order for a working MVP.]
+
+## 15. First release checklist
+[Concrete pass/fail checks before limited rollout.]
+```
+
+## Default assumptions when domain is underspecified
+
+<Note>
+When a user provides only a domain name without further detail, apply these defaults rather than blocking on clarification. State each assumption explicitly in the blueprint.
+
+```text
+Assumptions:
+- The first version is approval-gated for external or irreversible actions.
+- The agent can read approved source-of-truth systems.
+- The agent can draft outputs and propose changes.
+- The agent cannot commit high-risk actions without approval.
+- The first launch uses a single-agent harness unless evals show decomposition is required.
+```
+</Note>

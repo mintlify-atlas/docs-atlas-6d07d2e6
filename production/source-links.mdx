@@ -1,0 +1,115 @@
+---
+title: "Official Sources, API References, and Further Reading"
+description: "Authoritative references for agent harness design: OpenAI, Anthropic, MCP, and Agent Skills documentation, specifications, and engineering articles."
+---
+
+The references below are the primary authoritative sources used throughout this documentation. Use Agent Skills links when working on skill format, metadata, progressive disclosure, descriptions, and skill evals. Use OpenAI links for API implementation patterns, function calling, hosted tools, guardrails, sandboxes, prompt caching, and harness engineering practices. Use Anthropic links for simple agent patterns, context engineering, tool ergonomics, long-running harnesses, MCP execution, and skill architecture. Use MCP links for external resources, prompts, tools, authorization, and connector design. For threat modeling, governance, and enterprise deployment controls, consult the security and governance references at the end of this page.
+
+## Agent Skills
+
+<CardGroup cols={2}>
+  <Card title="Agent Skills specification" icon="book" href="https://agentskills.io/specification">
+    The Agent Skills specification — the authoritative reference for skill format, required frontmatter fields, file structure, and loader behavior.
+  </Card>
+  <Card title="Creator best practices" icon="wrench" href="https://agentskills.io/skill-creation/best-practices">
+    Best practices for writing skills that agents activate reliably and execute correctly. Covers instruction density, progressive disclosure, and validation.
+  </Card>
+  <Card title="Optimizing skill descriptions" icon="wrench" href="https://agentskills.io/skill-creation/optimizing-descriptions">
+    How to write skill descriptions that match the right tasks and avoid false activations. Essential for skills that share semantic territory.
+  </Card>
+  <Card title="Evaluating skill output quality" icon="shield" href="https://agentskills.io/skill-creation/evaluating-skills">
+    How to design activation evals and output quality evals for skills, including grading criteria and regression testing.
+  </Card>
+  <Card title="Using scripts in skills" icon="code" href="https://agentskills.io/skill-creation/using-scripts">
+    How to bundle executable scripts into a skill and invoke them safely from skill instructions.
+  </Card>
+</CardGroup>
+
+## OpenAI
+
+<CardGroup cols={2}>
+  <Card title="Agents guide" icon="book" href="https://developers.openai.com/api/docs/guides/agents">
+    OpenAI's primary guide to building agents with the Responses API, including tool use, multi-step reasoning, and hosted tools.
+  </Card>
+  <Card title="Function calling" icon="code" href="https://developers.openai.com/api/docs/guides/function-calling">
+    How to define and call functions (tools) using the OpenAI API, including strict mode, parallel calls, and structured outputs.
+  </Card>
+  <Card title="Tools" icon="wrench" href="https://developers.openai.com/api/docs/guides/tools">
+    Reference for all built-in and custom tool types available in the OpenAI API, including web search, code interpreter, and file search.
+  </Card>
+  <Card title="Guardrails and human review" icon="shield" href="https://developers.openai.com/api/docs/guides/agents/guardrails-approvals">
+    How to implement input and output guardrails, configure human review checkpoints, and manage approval flows for risky agent actions.
+  </Card>
+  <Card title="Agent safety" icon="shield" href="https://developers.openai.com/api/docs/guides/agent-builder-safety">
+    OpenAI's safety guidelines for agent builders, covering threat modeling, permission boundaries, and responsible deployment practices.
+  </Card>
+  <Card title="Sandboxed agents" icon="shield" href="https://developers.openai.com/api/docs/guides/agents/sandboxes">
+    How to run agent code execution in sandboxed environments, including filesystem and network isolation.
+  </Card>
+  <Card title="Responses API migration" icon="book" href="https://developers.openai.com/api/docs/guides/migrate-to-responses">
+    Migration guide from the Completions API to the Responses API for agent harnesses.
+  </Card>
+  <Card title="Prompt caching" icon="code" href="https://developers.openai.com/api/docs/guides/prompt-caching">
+    How prompt caching works in the OpenAI API, including cache key behavior, TTLs, and how to structure prompts for maximum cache hits.
+  </Card>
+  <Card title="Prompt Caching 201" icon="code" href="https://developers.openai.com/cookbook/examples/prompt_caching_201">
+    Advanced cookbook examples for prompt caching, including multi-turn agents, system prompt versioning, and cache telemetry.
+  </Card>
+  <Card title="Harness engineering" icon="wrench" href="https://openai.com/index/harness-engineering/">
+    OpenAI engineering article on building production agent harnesses, covering architecture patterns, reliability, and operational practices.
+  </Card>
+  <Card title="MCP and connectors" icon="book" href="https://developers.openai.com/api/docs/guides/tools-connectors-mcp">
+    How to connect external tools and MCP servers to OpenAI agents, including namespacing, scoping, and approval configuration.
+  </Card>
+</CardGroup>
+
+## Anthropic
+
+<CardGroup cols={2}>
+  <Card title="Building effective agents" icon="book" href="https://www.anthropic.com/research/building-effective-agents">
+    Anthropic's foundational research article on agent design — covering when to use agents, how to structure tool use, and how to avoid over-engineering.
+  </Card>
+  <Card title="Effective context engineering" icon="wrench" href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents">
+    How to structure context for long-running agents: instruction hierarchy, cache-aware ordering, compaction, and state management.
+  </Card>
+  <Card title="Writing effective tools" icon="wrench" href="https://www.anthropic.com/engineering/writing-tools-for-agents">
+    How to write tool descriptions, schemas, and error responses that improve tool selection accuracy and reduce misuse.
+  </Card>
+  <Card title="Long-running agent harnesses" icon="code" href="https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents">
+    Engineering patterns for harnesses that run for minutes or hours, covering budgets, checkpointing, compaction, and recovery.
+  </Card>
+  <Card title="Code execution with MCP" icon="code" href="https://www.anthropic.com/engineering/code-execution-with-mcp">
+    How Anthropic approaches sandboxed code execution through MCP, including security boundaries and result handling.
+  </Card>
+  <Card title="Agent Skills engineering note" icon="book" href="https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills">
+    Anthropic's engineering note on Agent Skills — the motivation, design, and how skills equip agents for real-world tasks.
+  </Card>
+</CardGroup>
+
+## MCP
+
+<CardGroup cols={2}>
+  <Card title="MCP specification" icon="book" href="https://modelcontextprotocol.io/specification/2025-11-25">
+    The Model Context Protocol specification (2025-11-25). The authoritative reference for MCP transport, message format, capabilities, and lifecycle.
+  </Card>
+  <Card title="MCP authorization" icon="shield" href="https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization">
+    The authorization section of the MCP specification — how clients and servers negotiate credentials, scopes, and access control.
+  </Card>
+  <Card title="MCP tools" icon="wrench" href="https://modelcontextprotocol.io/specification/2025-11-25/server/tools">
+    The tools section of the MCP specification — how MCP servers declare tools, how clients invoke them, and how results are returned.
+  </Card>
+</CardGroup>
+
+## Security and governance
+
+<CardGroup cols={2}>
+  <Card title="OWASP AI Agent Security Cheat Sheet" icon="shield" href="https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html">
+    OWASP's practical security guidance for AI agents, covering prompt injection, tool abuse, data handling, and deployment controls.
+  </Card>
+  <Card title="OWASP Agentic Skills Top 10" icon="shield" href="https://owasp.org/www-project-agentic-skills-top-10/">
+    The OWASP Top 10 for agentic skills — the most critical security risks to address when building and deploying agent skill systems.
+  </Card>
+  <Card title="NIST AI Risk Management Framework" icon="book" href="https://www.nist.gov/itl/ai-risk-management-framework">
+    The NIST AI RMF — a framework for identifying, measuring, managing, and governing AI risk across the full system lifecycle.
+  </Card>
+</CardGroup>

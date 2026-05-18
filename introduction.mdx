@@ -1,0 +1,80 @@
+---
+title: "Agents Best Practices: Provider-Neutral Harness Design"
+description: "A provider-neutral Agent Skill for designing, auditing, and building production-safe agentic harnesses across OpenAI, Anthropic, and compatible APIs."
+---
+
+Agents Best Practices is a reference skill and architectural guide for building agentic harnesses — the control plane that wraps a language model in a production system. It covers the full runtime: tool design, permissions, planning, memory, compaction, observability, and safety, across any domain.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get the skill running in your agent in under 5 minutes
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Install via npx skills, manual clone, or agent prompt
+  </Card>
+  <Card title="MVP Blueprint" icon="map" href="/guides/mvp-blueprint">
+    Generate a domain-specific MVP harness from scratch
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    Understand the component model and harness boundaries
+  </Card>
+</CardGroup>
+
+## What is an agent harness?
+
+An agent harness is the runtime control plane that sits between a user request and a language model's actions. The model proposes; the harness validates, authorizes, executes, records, and returns observations. Without a harness, a model that can call tools is an unaudited operator.
+
+This skill teaches you to design the harness correctly:
+
+- **Model-tool-observation loop** — how calls, results, retries, and stopping rules connect
+- **Typed tool registry** — narrow, validated tools with declared risk classes
+- **Permission engine** — reads, drafts, writes, and destructive actions get different paths
+- **Context builder** — cache-aware assembly with retrieval and auto-compaction
+- **Planning and goals** — when to plan, how to commit, when to stop
+
+## Who this is for
+
+Agents Best Practices applies to any team building an agent with real-world side effects. The pattern is the same whether the domain is:
+
+- Software engineering and code review
+- Research and data analysis
+- Customer support and CRM workflows
+- Finance, procurement, or legal review
+- Healthcare, HR, or education workflows
+- Operations, sales, or marketing automation
+
+<Note>
+This is not only for coding agents. The harness discipline — loop, tools, permissions, planning, compaction, evals — is the same across every domain.
+</Note>
+
+## The central principle
+
+> *"The model proposes actions; the harness validates, authorizes, executes, records, and returns observations."*
+
+Eight runtime rules follow from this:
+
+1. **The harness acts, not the model** — application code owns validation, authorization, execution, and logging
+2. **Every tool call gets a result** — denials, timeouts, and aborts are observations too
+3. **Risk changes the loop** — reads, drafts, writes, financial actions, and destructive actions need different permission paths
+4. **Draft and commit are separate** — high-risk side effects require approval records outside the prompt
+5. **Context is built, not dumped** — retrieve just enough, label trust boundaries, preserve active state across compaction
+6. **Long-running work needs budgets** — step, time, token, cost, and tool-call budgets are part of the product
+7. **Skills and connectors are progressively disclosed** — expose names first; load full workflows only when relevant
+8. **Repeated failures become harness features** — validators, tools, evals, and policies beat repeating prompt advice
+
+## Explore the skill
+
+<CardGroup cols={2}>
+  <Card title="Agentic Loop" icon="arrows-rotate" href="/concepts/agentic-loop">
+    Loop invariants, retries, budgets, and stopping rules
+  </Card>
+  <Card title="Tools and Permissions" icon="shield-check" href="/guides/tools-and-permissions">
+    Typed tools, risk classes, and approval flows
+  </Card>
+  <Card title="Context and Memory" icon="brain" href="/guides/context-and-memory">
+    Retrieval, compaction, and durable state
+  </Card>
+  <Card title="Security and Evals" icon="lock" href="/production/security-evals-observability">
+    Guardrails, tracing, evals, and launch gates
+  </Card>
+</CardGroup>

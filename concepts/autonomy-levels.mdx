@@ -1,0 +1,107 @@
+---
+title: "Autonomy Levels: From Answer-Only to Fully Autonomous"
+description: "How to choose the right autonomy level for your agent — answer-only, draft-only, approval-gated, or autonomous within policy — and when to upgrade."
+---
+
+Not every agent needs to act autonomously. Granting more autonomy than your evals justify is the fastest way to introduce hard-to-audit errors into production systems. The four autonomy levels below form a progression: start at the lowest level that creates value for your use case, measure whether it is sufficient, and only move up when evidence shows you need to.
+
+<Warning>
+Do not start at autonomous. Always begin at the lowest autonomy level that creates demonstrable value for your use case. Move up only when evals show the simpler level is insufficient.
+</Warning>
+
+<Tabs>
+  <Tab title="Answer-only">
+    ## Answer-only
+
+    The agent reads, interprets, and responds. It takes no actions and produces no side effects. All output is text the user reads and acts on themselves.
+
+    **What it means:** The model receives context (documents, data, conversation history) and produces a natural-language response. No tools with side effects are available. No state is written. The harness is minimal: context builder, model adapter, and response formatter.
+
+    **When to use it:**
+    - Q&A over provided documents or knowledge bases
+    - Summarization and classification
+    - Short drafting tasks where the user pastes or applies the output manually
+    - Any case where the cost of an incorrect automated action exceeds the cost of the user reviewing and applying the answer themselves
+
+    **Permission model:** No permission engine required for actions. If retrieval tools are available, they should be read-only with no write scope. No approval manager is needed.
+
+    **Example domain:** A support knowledge base assistant that answers agent questions from a policy corpus. The support agent reads the answer and decides what to tell the customer. The model takes no action in any ticketing system.
+  </Tab>
+  <Tab title="Draft-only">
+    ## Draft-only
+
+    The agent can propose actions, produce plans, compose messages, or generate artifacts — but cannot commit any of them. Every output is a draft that a human reviews before anything is sent, saved, or executed.
+
+    **What it means:** The model has access to read tools (search, retrieve, read files) and can produce structured proposals — a draft email, a proposed code change, a plan, a set of edits. The harness enforces that no proposal is committed automatically. Commit tools either do not exist in the registry or require an explicit human action outside the loop.
+
+    **When to use it:**
+    - Outbound communication (email, Slack, tickets) where incorrect sends have reputational or legal consequences
+    - Code generation where changes must pass review before merge
+    - Financial or legal document drafting
+    - Any domain where the volume of actions is low enough that human review is not a bottleneck
+
+    **Permission model:** Read tools are allowed. Write and send tools are either absent from the registry or wrapped with a `draft_only` flag that prevents execution. The permission engine returns `deny` with reason `draft_mode` for any tool with side effects.
+
+    **Example domain:** A sales outreach agent that researches an account, drafts a personalized email, and presents it for the sales rep to review and send. The agent never calls a send API.
+  </Tab>
+  <Tab title="Approval-gated">
+    ## Approval-gated action
+
+    The agent can prepare and execute actions, but all actions above a defined risk threshold require explicit human or policy approval before the harness proceeds. The loop pauses at each gate and resumes only after an approval result is recorded.
+
+    **What it means:** The agent has access to action tools, but the permission engine classifies every tool call by risk class. Low-risk, read-only, or idempotent operations (search, read, classify) execute automatically. Higher-risk operations (send, write, delete, financial commit) trigger an approval pause. The harness emits an approval request, waits for a human decision, and appends the approval result as a structured observation before continuing.
+
+    **When to use it:**
+    - Workflows where most steps are safe to automate but a subset require a human in the loop
+    - Regulated domains (finance, legal, healthcare) where certain actions require documented authorization
+    - Early production deployments where you want automation speed but need a safety net
+    - Any case where incorrect automated actions are recoverable but costly
+
+    **Permission model:** The permission engine has an explicit risk class for each tool. Low-risk tools return `allow`. High-risk tools return `approval_required`. The approval manager records the scoped decision (including what was approved, by whom, and when) before execution proceeds. Approval is scoped to the exact action — vague consent is not treated as blanket authorization.
+
+    <Tip>
+      Approval-gated execution works best when combined with a planning mode that shows the user the full proposed action sequence before any step executes. See [/guides/planning-and-goals](/guides/planning-and-goals) for how to implement plan-then-execute flows with approval checkpoints.
+    </Tip>
+
+    **Example domain:** A finance operations agent that reconciles ledger entries automatically but requires an authorized approver to confirm any journal entry that exceeds a dollar threshold or touches a restricted account.
+  </Tab>
+  <Tab title="Autonomous">
+    ## Autonomous action within policy
+
+    The agent executes actions autonomously within strictly defined scopes, budgets, and audit controls. No per-action human approval is required, but the harness enforces hard policy limits and records every action for audit.
+
+    **What it means:** The agent has a narrow, well-defined task scope. The permission engine enforces policy-based allow/deny decisions without human input. Budgets cap the blast radius of any single run. Every action is traced. The harness can roll back or escalate if policy is violated or if the repeated-failure threshold is reached. This level is appropriate only for low-risk, high-volume, well-understood task classes that have passed evals at the approval-gated level.
+
+    **When to use it:**
+    - High-volume, repetitive tasks where per-action approval creates unacceptable latency
+    - Task classes with well-understood failure modes and low blast radius
+    - Operations that are easy to audit and reverse if something goes wrong
+    - After the same task class has run reliably at the approval-gated level for a measured period
+
+    **Permission model:** The permission engine enforces policy rules autonomously: allow if within scope and budget, deny otherwise. There is no per-action approval gate. Instead, the harness runs continuous policy checks, enforces hard budgets, and emits structured trace events for every action. A separate audit process reviews traces. Anomaly detection or threshold-based escalation triggers human review when patterns deviate from baseline.
+
+    **Example domain:** A data pipeline agent that classifies and routes incoming support tickets to queues based on content and priority. It has no access to customer PII beyond the ticket, cannot send external messages, and has a hard cap on tickets processed per run. Every routing decision is logged.
+  </Tab>
+</Tabs>
+
+## Choosing and upgrading autonomy levels
+
+Use this decision path when starting a new agent or evaluating whether to increase autonomy:
+
+<Steps>
+  <Step title="Identify the primary job-to-be-done">
+    What is the one task this agent must accomplish? Define a measurable done condition before choosing a level.
+  </Step>
+  <Step title="Start at the lowest level that creates value">
+    Answer-only and draft-only are almost always sufficient for a first version. They are faster to build, easier to evaluate, and safer to deploy.
+  </Step>
+  <Step title="Run evals at the current level">
+    Measure task success rate, error rate, and user satisfaction. Document specific failure cases where the current level is insufficient.
+  </Step>
+  <Step title="Move up only when evals justify it">
+    If evals show the current level cannot meet the use case requirements, move up exactly one level. Re-run evals at the new level before promoting to production.
+  </Step>
+  <Step title="Narrow scope when increasing autonomy">
+    Each increase in autonomy level should come with a corresponding decrease in tool scope. More autonomy requires narrower, more tightly permissioned tools.
+  </Step>
+</Steps>

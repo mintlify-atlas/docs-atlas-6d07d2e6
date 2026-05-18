@@ -1,0 +1,164 @@
+---
+title: "Agent Harness Architecture: Component Model and Boundaries"
+description: "The component model of a production agent harness: what the model does vs. what application code must own, and the 15 harness components."
+---
+
+A production agent is not just a model with a system prompt. It is a model paired with a harness — the provider-neutral control plane that owns tool routing, permissions, context assembly, memory, compaction, approvals, tracing, and recovery. Getting this boundary right is the single most important architectural decision in any agentic system.
+
+## The harness boundary
+
+The model and the harness have distinct, non-overlapping responsibilities. Blurring this line is the root cause of most agent failures in production.
+
+```text
+Model responsibilities
+- interpret user intent
+- choose the next reasoning/action step
+- request tools using structured calls
+- synthesize observations
+- produce final answers or plans
+
+Harness responsibilities
+- assemble instructions and context
+- decide which tools are visible
+- validate tool arguments
+- enforce permissions and approvals
+- execute tools or call external systems
+- store state, artifacts, and traces
+- compact and rehydrate context
+- enforce budgets and stop conditions
+```
+
+<Note>
+The core principle is "model proposes, harness disposes." The model emits a structured tool request; the harness decides whether to execute, deny, or pause for approval. The model never executes actions directly.
+</Note>
+
+## The 15-component model
+
+A robust harness contains these components. Not every component needs to be built on day one — start with the minimal viable set and add components as measured gaps justify them.
+
+<CardGroup cols={2}>
+  <Card title="1. Instruction manager" icon="file-text">
+    Assembles and scopes system, developer, and user instructions. Controls which instruction blocks are loaded for a given task context.
+  </Card>
+  <Card title="2. Context builder" icon="layers">
+    Constructs the full model input from instructions, memory, retrieved content, tool results, and prior observations. Enforces token budgets and cache-aware ordering.
+  </Card>
+  <Card title="3. Model adapter" icon="cpu">
+    Abstracts provider-specific API differences (OpenAI, Anthropic, OpenAI-compatible). Handles retries, rate limits, and response parsing.
+  </Card>
+  <Card title="4. Tool registry" icon="wrench">
+    Maintains the catalog of available tools, their schemas, risk classes, and visibility rules. Decides which tools are exposed to the model per turn.
+  </Card>
+  <Card title="5. Permission engine" icon="shield">
+    Evaluates every tool call against policy before execution. Returns allow, deny, or approval-required decisions with reasons.
+  </Card>
+  <Card title="6. Execution engine" icon="play">
+    Runs permitted tool calls, manages parallelism for safe concurrent calls, and serializes writes and destructive operations.
+  </Card>
+  <Card title="7. State store" icon="database">
+    Persists session state, active plans, approval records, tool traces, and artifacts outside the prompt window.
+  </Card>
+  <Card title="8. Memory and retrieval layer" icon="search">
+    Retrieves relevant context from long-term memory, vector stores, or knowledge bases. Attaches content just-in-time rather than front-loading the prompt.
+  </Card>
+  <Card title="9. Compactor" icon="compress">
+    Detects when context approaches token limits and produces structured summaries that preserve working state, plan progress, and approval history.
+  </Card>
+  <Card title="10. Planner and goal controller" icon="map">
+    Manages multi-step planning mode and long-running goal loops. Tracks objectives, done conditions, checkpoints, and budget consumption.
+  </Card>
+  <Card title="11. Skill registry" icon="package">
+    Discovers and loads reusable agent skill packages. Controls progressive disclosure so the model is not overwhelmed with capabilities it does not need.
+  </Card>
+  <Card title="12. MCP/external connector manager" icon="plug">
+    Manages connections to Model Context Protocol servers and external APIs. Enforces scopes, credentials, and connector-level permissions.
+  </Card>
+  <Card title="13. Approval manager" icon="check-circle">
+    Pauses the loop when a tool call requires human or policy approval. Records scoped approval decisions and resumes execution with the result.
+  </Card>
+  <Card title="14. Trace and evaluation system" icon="activity">
+    Records typed operational events for debugging, auditing, cost analysis, and regression evals. Separate from model reasoning traces.
+  </Card>
+  <Card title="15. Sandbox or execution boundary" icon="box">
+    Isolates code execution, shell work, browser automation, and generated artifacts from the trusted control plane.
+  </Card>
+</CardGroup>
+
+## The boundary principle
+
+The trusted control plane must live outside model-directed compute. Anything the model can modify should not be authoritative.
+
+**The harness must own:**
+
+- User identity and tenant boundaries
+- Credential management
+- Approval records
+- Audit logs
+- Billing and rate limits
+- Tool authorization
+- Final commit to external systems
+
+**Sandboxed or external execution can own:**
+
+- Temporary files
+- Generated artifacts
+- Script execution
+- Isolated browser or shell work
+- Connector-specific data processing
+
+Do not put secrets, approval logic, or authorization decisions inside the model prompt or a sandbox the model can modify.
+
+## Authority hierarchy
+
+The harness should label content by authority level so the model can reason about what to trust. Retrieved content may contain instructions, but those instructions are data, not policy.
+
+```text
+provider/system policy
+  -> organization policy
+  -> product/developer policy
+  -> workspace/project policy
+  -> domain or directory policy
+  -> user task
+  -> model-visible runtime reminders
+  -> tool observations
+  -> untrusted retrieved content
+```
+
+## Minimal viable harness
+
+Most teams should start here and add complexity only when evals show a gap:
+
+<Steps>
+  <Step title="One model adapter">
+    Abstract the provider API from the rest of the harness from the start.
+  </Step>
+  <Step title="One context builder">
+    Deterministic assembly of instructions, memory, and observations with explicit token budgets.
+  </Step>
+  <Step title="A narrow tool registry">
+    Only the tools required for the primary job-to-be-done. No broad tools like `execute_anything`.
+  </Step>
+  <Step title="Local schema validation">
+    Validate tool arguments before execution, not after.
+  </Step>
+  <Step title="Runtime permission checks">
+    Enforce permissions in code, not only in prompt text.
+  </Step>
+  <Step title="Structured tool results">
+    Return typed, bounded observations the model can reason over.
+  </Step>
+  <Step title="Step and cost budgets">
+    Hard limits on model turns, tool calls, wall time, tokens, and spend.
+  </Step>
+  <Step title="Trace logging">
+    Record typed events for every tool call, result, and decision.
+  </Step>
+  <Step title="Compaction only when needed">
+    Add the compactor after the base loop is stable, not before.
+  </Step>
+  <Step title="A small eval set">
+    A handful of representative tasks with known correct behavior to catch regressions.
+  </Step>
+</Steps>
+
+Add subagents, MCP, skill packages, goal loops, and automation only after the base loop is reliable.

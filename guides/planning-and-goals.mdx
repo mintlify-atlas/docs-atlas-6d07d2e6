@@ -1,0 +1,244 @@
+---
+title: "Planning Mode, Approval Gates, and Long-Running Goals"
+description: "When to enter planning mode, how approval-gated execution works, and how to design goal loops with budgets, checkpoints, and explicit stopping conditions."
+---
+
+Planning mode is a runtime mode enforced by the harness — not a paragraph in a prompt. When an agent enters planning mode, the harness disables mutation tools and restricts execution to read, search, inspect, and draft operations. This separation ensures that the model can reason about a complex or risky task, produce a structured plan artifact, and surface that plan for human review before any side effect occurs. Goal-like loops extend this model for long-running work: they give the agent a measurable objective, a budget, checkpoints, and explicit stopping conditions that persist across many steps and context windows.
+
+## When to use planning mode
+
+Enter planning mode when any of the following conditions apply:
+
+- More than one valid strategy exists
+- The work touches multiple systems or stakeholders
+- Side effects are hard to undo
+- User preferences materially affect the outcome
+- The domain is regulated or high stakes
+- Tool execution is expensive
+- Validation criteria are unclear
+- The task will likely exceed one context window
+
+Do not enter planning mode for simple read-only questions or obvious single-step actions.
+
+## How planning mode works
+
+<Steps>
+  <Step title="Enter planning mode">
+    The harness sets the session to planning mode. Mutation tools (writes, sends, deletes, payments, permission changes, deployments, external commitments) are blocked at the permission layer — not only stated in the prompt.
+
+    Tools allowed during planning:
+    ```text
+    read, search, inspect, ask clarifying questions,
+    draft plan artifact, update plan artifact,
+    compare approaches, estimate risks and validation steps
+    ```
+
+    Tools blocked during planning:
+    ```text
+    write, send, delete, purchase, deploy,
+    modify external records, change permissions,
+    other irreversible side effects
+    ```
+  </Step>
+
+  <Step title="Produce a plan artifact">
+    The agent reads sources, asks specific clarifying questions if needed, and produces a structured plan stored outside the prompt as a durable artifact.
+
+    ```markdown
+    # Plan: [objective]
+
+    ## Objective
+    ...
+
+    ## Scope
+    Included:
+    - ...
+
+    Excluded:
+    - ...
+
+    ## Assumptions
+    - ...
+
+    ## Risks
+    - ...
+
+    ## Steps
+    1. ...
+    2. ...
+    3. ...
+
+    ## Tools required
+    - ...
+
+    ## Approval points
+    - ...
+
+    ## Validation
+    - ...
+
+    ## Rollback or recovery
+    - ...
+
+    ## Done condition
+    - ...
+    ```
+  </Step>
+
+  <Step title="Request approval">
+    Before executing risky steps, surface the plan for review with:
+
+    ```text
+    summary of plan
+    exact actions requiring approval
+    risk class
+    expected outcome
+    rollback or recovery path
+    scope of approval
+    expiration or budget
+    ```
+
+    Approval is tied to the specific plan version. If the plan changes materially, request approval again. The approval record is stored outside the prompt so it survives compaction.
+  </Step>
+
+  <Step title="Execute the approved plan">
+    After approval:
+
+    1. Reattach the approved plan artifact.
+    2. Create a short todo list.
+    3. Execute one bounded step at a time.
+    4. Validate after each meaningful change.
+    5. Record progress.
+    6. Pause if risk increases or assumptions fail.
+  </Step>
+</Steps>
+
+## Goal-like loops
+
+A goal is a durable objective with a measurable done condition. It is distinct from a plan:
+
+```text
+plan: how to approach the work
+goal: what state should eventually be true
+```
+
+Use a goal-like loop when the agent must continue making progress across many steps, tool calls, or sessions.
+
+**Goal state schema:**
+
+```yaml
+objective: "..."
+status: active | paused | completed | blocked | cancelled
+scope: "..."
+done_condition: "..."
+budget:
+  max_steps: 30
+  max_cost: "..."
+  max_wall_time: "..."
+checkpoints:
+  - "..."
+validation:
+  - "..."
+forbidden_actions:
+  - "..."
+approval_required_for:
+  - "..."
+progress_log_ref: "..."
+```
+
+**Example of a well-formed goal:**
+
+```text
+Analyze the last 200 support escalations, classify the top five repeatable
+causes, cite evidence for each, propose one operational fix per cause, and
+stop when the report has passed the source-check and PII-redaction checklist.
+```
+
+A good goal has one objective, bounded scope, identified source materials, allowed tools, forbidden actions, a budget, checkpoints, a validation method, and a stopping condition.
+
+## Budget types
+
+<Warning>
+A goal loop without budgets is an unbounded autonomous loop. Always define all four budget types before starting a long-running goal.
+</Warning>
+
+| Budget type | Purpose |
+|-------------|---------|
+| `max_steps` | Caps the total number of loop iterations |
+| `max_wall_time` | Caps elapsed clock time for the run |
+| `max_tokens` | Caps total input and output token consumption |
+| `max_cost` | Caps total spend across model calls and tool executions |
+
+When any budget is reached, the loop stops and records the reason. The agent does not continue.
+
+## Checkpoints
+
+For long-running work, add explicit checkpoints to the goal state:
+
+```text
+checkpoint 1: context gathered
+checkpoint 2: plan approved
+checkpoint 3: first safe artifact produced
+checkpoint 4: validation passed
+checkpoint 5: final review complete
+```
+
+At each checkpoint, record:
+- what was done
+- evidence
+- remaining work
+- risks
+- next action
+
+Checkpoints enable human review mid-run and allow the agent to resume correctly after compaction or a pause for approval.
+
+## Stopping conditions
+
+The loop stops when any of the following conditions are true:
+
+```text
+done condition is met
+budget is reached
+validation fails repeatedly
+required approval is missing
+tool access is unavailable
+the user changes the objective
+safety policy blocks continuation
+the agent cannot reduce uncertainty without risky action
+```
+
+Every stop is recorded as a trace event with the reason.
+
+## Anti-patterns
+
+<Warning>
+Do not use a goal loop for a vague backlog. A goal loop is only appropriate for a single, coherent objective with a measurable done condition.
+
+**Bad goal:**
+```text
+Improve support operations.
+```
+
+**Good goal:**
+```text
+Analyze the last 200 support escalations, classify the top five repeatable
+causes, cite evidence for each, propose one operational fix per cause, and
+stop when the report has passed the source-check and PII-redaction checklist.
+```
+
+A vague goal produces an unbounded loop that cannot know when it is done.
+</Warning>
+
+For fragile or high-risk operations, use the plan-validate-execute pattern:
+
+```text
+1. Gather source of truth.
+2. Create a structured plan.
+3. Validate the plan against source data.
+4. Ask for approval if needed.
+5. Execute the approved plan.
+6. Validate the result.
+7. Produce a final audit summary.
+```
+
+This pattern applies to data migrations, customer communications, financial adjustments, legal document changes, operational runbooks, procurement workflows, and medical literature review workflows.

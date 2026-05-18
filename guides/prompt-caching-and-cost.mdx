@@ -1,0 +1,217 @@
+---
+title: "Prompt Caching, Cost Control, and Cache-Aware Context"
+description: "Design cache-aware context with stable prefixes, measure prompt cache hit rates, control token spend, and balance compaction against caching tradeoffs."
+---
+
+Prompt caching reduces repeated prefill work when multiple model calls share the same prefix. In long-running agents, this can materially reduce input-token cost and time-to-first-token latency. Treat prompt caching as part of harness architecture — not as a provider afterthought. The context builder, tool registry, instruction manager, compactor, and telemetry layer all affect cache hit rate, and a few common mistakes can silently destroy it.
+
+## How Prompt Caching Works
+
+Most prompt-cache systems cache the stable leading portion of a request (the prefix) and skip re-processing it on subsequent calls that share an identical prefix. Only the volatile trailing portion (the suffix) is processed fresh each time. The result is that requests with a large stable prefix pay much less for input tokens on the second and subsequent calls.
+
+The key constraint is exactness: the cached prefix must match byte-for-byte (or token-for-token, depending on the provider). Any change to the prefix — including whitespace, key ordering, or injected metadata — invalidates the cache entry.
+
+## Cache-Aware Context Ordering
+
+Design requests so stable content appears first and volatile content appears last. This gives the provider the longest possible prefix to cache.
+
+**Recommended ordering — stable to volatile:**
+
+```text
+1. Tool definitions, in deterministic order
+2. Static system/developer instructions
+3. Stable scoped instructions or skill index
+4. Stable reference context likely to be reused
+5. Prior conversation or event history (append-only where possible)
+6. Dynamic runtime environment
+7. New user message or current task suffix
+```
+
+**Values that belong near the end:**
+
+```text
+current date/time
+request ID / session ID
+working directory
+cursor state
+fresh search results
+latest tool output
+user's newest message
+```
+
+<Note>
+  The compaction vs. cache tradeoff is real: compaction is sometimes necessary to stay within context limits, but it resets or shifts the stable prefix, triggering a cold-cache turn. Compact only when the context window requires it. After one cold turn, the compacted summary can itself become the new stable prefix and caching resumes. Frequent compaction churn — for example, re-summarizing every turn — prevents this recovery and keeps cache hit rates low.
+</Note>
+
+## Concrete Ordering Examples
+
+<CodeGroup>
+```text Good — append-only multi-turn shape
+turn 1: stable_prefix + user_1
+turn 2: stable_prefix + user_1 + assistant_1 + user_2
+turn 3: stable_prefix + user_1 + assistant_1 + user_2 + assistant_2 + user_3
+```
+
+```text Bad — history rewritten every turn
+turn 2: rewritten summary of turn 1 + stable_prefix + user_2
+turn 3: reordered tools + rewritten system prompt + user_3
+```
+</CodeGroup>
+
+Append-only history lets the provider reuse prior prefix work. Rewriting history every turn often destroys cache reuse entirely.
+
+A cache-aware context builder should maintain two explicit zones:
+
+```text
+stable_prefix:
+  tool definitions
+  static instructions
+  scoped stable instructions
+  stable skill index
+  stable schemas and output contracts
+
+volatile_suffix:
+  current task
+  dynamic runtime state
+  latest observations
+  new retrieved snippets
+  approval request/response
+```
+
+This does not mean all stable content should always be included. Relevance still matters. The best request is both cache-friendly and context-efficient.
+
+## Compaction vs. Cache Tradeoff
+
+Compaction is often necessary, but it resets or changes the reusable prefix. Apply these rules:
+
+<Steps>
+  <Step title="Compact only when useful">
+    Do not compact speculatively. Compact when the context window is genuinely constrained, not as a routine housekeeping step.
+  </Step>
+  <Step title="Make compaction boundaries explicit">
+    Record when and why compaction occurred. This makes cache-hit-rate drops explainable in telemetry.
+  </Step>
+  <Step title="Stabilize the summary">
+    Once a compacted summary is written, do not rewrite it on subsequent turns. Let it become the new stable prefix.
+  </Step>
+  <Step title="Preserve recent high-value messages">
+    When possible, keep the most recent high-signal messages verbatim rather than summarizing them. Pruning oversized tool outputs is preferable to rewriting all of history.
+  </Step>
+  <Step title="Externalize bulky artifacts">
+    Store large intermediate artifacts outside the prompt and reference them. This reduces the pressure to compact at all.
+  </Step>
+</Steps>
+
+## Cost Telemetry
+
+Log cache diagnostics on every model call. The following fields cover the full cost picture:
+
+```json
+{
+  "request_id": "...",
+  "session_id": "...",
+  "provider": "openai|anthropic|openai-compatible",
+  "model": "...",
+  "prompt_bundle_version": "...",
+  "tool_bundle_version": "...",
+  "system_prompt_hash": "...",
+  "tools_hash": "...",
+  "input_tokens_new": 0,
+  "cache_read_tokens": 0,
+  "cache_write_tokens": 0,
+  "cached_tokens": 0,
+  "output_tokens": 0,
+  "time_to_first_token_ms": 0,
+  "total_latency_ms": 0,
+  "estimated_cost": 0
+}
+```
+
+**Track these aggregate metrics over time:**
+
+```text
+cache hit rate by session
+cache hit rate by tenant or segment
+unique system prompt hashes per day
+unique tool bundle hashes per day
+cost split: uncached input, cached input, output
+latency split: prefill, time-to-first-token, generation
+cache hit rate before and after compaction
+```
+
+Alert when a long-prefix agent unexpectedly reports zero cached tokens over many turns, or when stable prompt or tool hashes fragment unexpectedly. Both are symptoms of a cache-busting pattern that has been introduced silently.
+
+## Provider-Specific Notes
+
+<Tabs>
+  <Tab title="OpenAI">
+    OpenAI prompt caching is automatic on supported API requests. The response includes a `cached_tokens` field under `usage.prompt_tokens_details`.
+
+    ```text
+    log usage.prompt_tokens_details.cached_tokens
+    keep stable instructions and tools before volatile context
+    use provider-supported cache keys or retention parameters when appropriate
+    monitor cache hit rate, cost, and time-to-first-token
+    avoid overly narrow cache routing keys in low-traffic buckets
+    ```
+  </Tab>
+  <Tab title="Anthropic">
+    Anthropic prompt caching uses explicit cache-control markers or automatic caching depending on the API path and model. Consult provider documentation for the current exact syntax, TTL behavior, and breakpoint limits.
+
+    ```text
+    place cache markers after stable blocks, not before volatile blocks
+    respect provider limits on cache breakpoints
+    choose short or extended TTL based on expected inter-request gaps
+    monitor cache_read_input_tokens and cache_creation_input_tokens fields
+    ```
+  </Tab>
+  <Tab title="OpenAI-compatible">
+    OpenAI-compatible APIs vary widely. Some implement prefix caching, some only emulate OpenAI message shapes, and some expose backend-specific controls.
+
+    ```text
+    test the exact provider and model
+    verify whether cached-token usage is reported
+    use tenant-safe cache isolation where supported
+    monitor backend prefix-cache hit-rate if self-hosted
+    keep request serialization stable even when cache support is uncertain
+    ```
+  </Tab>
+</Tabs>
+
+## Cost Control Strategies
+
+<CardGroup cols={2}>
+  <Card title="Session budgets" icon="coins">
+    Set a maximum token spend per session and per tool call. Track cumulative cost against the budget and stop early when it is exceeded rather than letting runaway loops consume unlimited tokens.
+  </Card>
+  <Card title="Progressive tool disclosure" icon="eye">
+    Prefer skill and tool progressive disclosure over loading large inventories upfront. Fewer tools in the prompt means a smaller stable prefix to maintain and lower input-token cost.
+  </Card>
+  <Card title="Deterministic serialization" icon="sort">
+    Sort tools and schema keys deterministically. Use versioned prompt and tool bundles. Avoid middleware that injects trace IDs, timestamps, or randomized content into the stable prefix.
+  </Card>
+  <Card title="Long retention only when justified" icon="clock">
+    Use extended cache retention only when the expected inter-request gap justifies the retention cost. For low-frequency sessions, standard TTL is usually sufficient.
+  </Card>
+</CardGroup>
+
+## Anti-Patterns
+
+Avoid these cache-killing patterns:
+
+```text
+timestamp at the start of the system prompt
+request ID in the stable prefix
+randomized tool order
+randomized JSON key order
+injecting live environment state before static instructions
+including per-user secrets in the prefix
+rewriting conversation history every turn
+re-summarizing the whole session every turn
+changing schema formatting without versioning
+putting volatile retrieval results before stable instructions
+using overly granular cache keys with low request volume
+failing to log cached-token fields
+```
+
+The single most common mistake is placing `current date/time` or a `request_id` at the top of the system prompt. This makes every request a cache miss regardless of how stable the rest of the prompt is.

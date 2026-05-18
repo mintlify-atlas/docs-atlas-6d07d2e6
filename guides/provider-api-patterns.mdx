@@ -1,0 +1,291 @@
+---
+title: "Provider API Patterns: OpenAI, Anthropic, Compatible APIs"
+description: "Implementation patterns for the model-tool-observation loop across OpenAI, Anthropic, and OpenAI-compatible APIs, with provider-neutral abstractions."
+---
+
+The core agent loop — send instructions and context, receive a response or tool call, execute the tool, return the result, repeat — is the same regardless of which provider you use. Provider differences are mostly in message shape, state handling, hosted tools, streaming events, and reasoning item formats. Designing the loop against a provider-neutral abstraction means you can switch or mix providers without rewriting your harness.
+
+## Provider-Neutral Abstraction
+
+The provider-neutral view of the loop is:
+
+```text
+instructions + context + tool schemas
+  -> model output
+  -> final response or tool call
+  -> application executes tool
+  -> application returns tool result
+  -> repeat
+```
+
+The harness should implement this loop once against an internal adapter interface, and each provider gets a thin adapter that translates to and from its wire format. Internal event types — `ToolCall`, `ToolResult`, `FinalAnswer` — remain stable even when provider APIs change.
+
+**Adapter responsibilities:**
+
+```text
+normalize input messages/items
+normalize tool schemas
+normalize model output into ToolCall or FinalAnswer events
+normalize tool results back to provider format
+handle streaming event conversion
+handle provider-specific state chaining
+capture token/cost/latency metadata
+```
+
+## API Patterns by Provider
+
+<Tabs>
+  <Tab title="OpenAI — Responses API">
+    Use the Responses-style API for new OpenAI-native agent work when available. It provides typed output items, hosted tools, remote MCP support, stateful chaining options, and richer agent-like primitives.
+
+    ```python
+    response = client.responses.create(
+        model=model,
+        instructions=instructions,
+        input=input_items,
+        tools=visible_tools,
+        store=True,
+    )
+
+    for item in response.output:
+        if item.type == "function_call":
+            result = execute_tool(item.name, item.arguments)
+            next_response = client.responses.create(
+                model=model,
+                previous_response_id=response.id,
+                input=[{
+                    "type": "function_call_output",
+                    "call_id": item.call_id,
+                    "output": result,
+                }],
+            )
+    ```
+
+    Use `previous_response_id` for stateful chaining. The provider stores prior output items, so you do not need to resend the full message history on each turn. Use the harness for private and business tools, permission checks, durable state, and audit logs even when hosted tools are available.
+  </Tab>
+  <Tab title="OpenAI — Chat Completions">
+    Use Chat Completions when you need compatibility with OpenAI-compatible providers or when your harness already owns message history manually.
+
+    ```python
+    messages = [
+        {"role": "system", "content": instructions},
+        {"role": "user", "content": task},
+    ]
+
+    while True:
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            tools=visible_tools,
+        )
+        msg = response.choices[0].message
+        messages.append(msg)
+
+        if not msg.tool_calls:
+            return msg.content
+
+        for call in msg.tool_calls:
+            result = execute_tool(call.function.name, call.function.arguments)
+            messages.append({
+                "role": "tool",
+                "tool_call_id": call.id,
+                "content": result,
+            })
+    ```
+
+    In this pattern, the harness owns conversation state, message trimming, compaction, prior tool results, tool-call ID matching, approval pauses, retries, and finalization.
+
+    OpenAI prompt caching is automatic on supported requests. Cache hit data is reported in `usage.prompt_tokens_details.cached_tokens`.
+  </Tab>
+  <Tab title="Anthropic">
+    Anthropic uses structured `tool_use` content blocks in assistant messages and `tool_result` blocks in subsequent user messages.
+
+    Provider-neutral shape:
+
+    ```text
+    request:      messages + tools
+    response:     assistant content with tool_use blocks
+    application:  validate and execute tool_use blocks
+    next request: user message containing tool_result content blocks
+    repeat until final answer
+    ```
+
+    Prompt caching uses explicit `cache_control` markers on content blocks or automatic caching depending on the API path. Place cache markers after stable blocks, not before volatile blocks:
+
+    ```python
+    # Example: mark stable system content for caching
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": stable_instructions,
+                "cache_control": {"type": "ephemeral"}
+            },
+            {
+                "type": "text",
+                "text": current_task   # volatile — no cache_control
+            }
+        ]
+    }
+    ```
+
+    Monitor `cache_creation_input_tokens` and `cache_read_input_tokens` in the response usage fields. Keep the same harness rules regardless of provider: validate arguments locally, check permissions, return structured results, preserve budgets, and trace every step.
+  </Tab>
+  <Tab title="OpenAI-compatible APIs">
+    OpenAI-compatible APIs accept requests in the Chat Completions message format. Target them by setting `base_url` on the OpenAI client:
+
+    ```python
+    from openai import OpenAI
+
+    client = OpenAI(
+        api_key="provider-api-key",
+        base_url="https://api.example-provider.com/v1",
+    )
+
+    response = client.chat.completions.create(
+        model="provider-model-name",
+        messages=messages,
+        tools=visible_tools,
+    )
+    ```
+
+    OpenAI-compatible APIs vary in:
+
+    ```text
+    tool-call schema fidelity
+    support for parallel tool calls
+    strict schema behavior
+    streaming event shapes
+    reasoning item visibility
+    multimodal support
+    context windows
+    storage defaults
+    hosted tools
+    safety behavior
+    ```
+
+    Do not assume full OpenAI parity. Test the exact provider and model. Verify whether cached-token usage is reported before relying on cache telemetry.
+  </Tab>
+</Tabs>
+
+## Model Adapter Pattern
+
+Write a thin adapter for each provider so the harness loop does not change when switching providers. The adapter translates between the provider's wire format and your internal event types:
+
+```python
+class ProviderAdapter:
+    def build_request(self, context: AgentContext) -> dict:
+        """Translate AgentContext to provider request shape."""
+        ...
+
+    def parse_response(self, raw: dict) -> list[AgentEvent]:
+        """Normalize provider response into ToolCall or FinalAnswer events."""
+        ...
+
+    def build_tool_result(self, call_id: str, result: str) -> dict:
+        """Translate a tool result into the provider's expected format."""
+        ...
+
+    def extract_usage(self, raw: dict) -> UsageMetrics:
+        """Capture token counts, cache fields, and latency from response metadata."""
+        ...
+```
+
+Internal event types should be stable:
+
+```python
+@dataclass
+class ToolCall:
+    call_id: str
+    name: str
+    arguments: dict
+
+@dataclass
+class FinalAnswer:
+    content: str
+
+@dataclass
+class UsageMetrics:
+    input_tokens: int
+    cached_tokens: int
+    output_tokens: int
+    estimated_cost: float
+```
+
+The main harness loop operates entirely on these internal types and never inspects provider-specific fields directly.
+
+## Hosted Tools vs. Client Tools
+
+<CardGroup cols={2}>
+  <Card title="Hosted tools" icon="cloud">
+    Useful for web search, file search, code execution, image generation, computer/browser use, and remote connector calls supported by the provider. Run in provider infrastructure.
+  </Card>
+  <Card title="Client tools" icon="server">
+    Preferred for private business APIs, tenant-specific permissions, regulated data, financial actions, communication sends, state-changing operations, and custom audit requirements. Run in your application or sandbox.
+  </Card>
+</CardGroup>
+
+Do not outsource business authorization to a hosted tool unless the product explicitly supports and logs the required approval policy.
+
+## Strict Schemas and Validation
+
+Use strict function schemas where available:
+
+```text
+required fields explicit
+unknown fields rejected
+enums for actions
+minimum/maximum constraints
+validated IDs
+structured outputs
+```
+
+Then validate again in the harness before execution. Provider-side schema enforcement and harness-side validation are not redundant — they protect against different failure modes.
+
+## Streaming
+
+Streaming reduces latency but adds complexity:
+
+- Buffer enough data to validate complete tool calls before acting on them
+- Execute only when a tool call is complete, never on partial output
+- Keep result ordering deterministic across parallel tool calls
+- Handle aborts by sending synthetic tool results if the provider requires it
+- Do not stream partial sensitive data to users before output guardrails run
+
+## State Strategies
+
+<AccordionGroup>
+  <Accordion title="Stateless (full context per request)">
+    Every request sends the full selected context. Simplest to reason about. The harness owns all state. Works with any provider.
+  </Accordion>
+  <Accordion title="Previous-response chaining">
+    The provider stores prior state and you reference it with `previous_response_id`. Reduces payload size. Available with the OpenAI Responses API.
+  </Accordion>
+  <Accordion title="Conversation object">
+    The provider stores a conversation and you append to it by ID. Available with some provider APIs.
+  </Accordion>
+  <Accordion title="Application event store">
+    The harness stores the full operational history in a durable store. Required for audit, replay, approval workflows, and evals. Use this regardless of which provider state strategy you also employ.
+  </Accordion>
+</AccordionGroup>
+
+Even when provider state is used, maintain an application event store for audit, replay, approvals, and evaluations.
+
+## Common Pitfalls
+
+<Warning>
+  Provider-specific message formats are the most common portability break. Tool result messages differ between Chat Completions (`role: "tool"` with `tool_call_id`) and Anthropic (`tool_result` content blocks). An adapter that handles both prevents the harness loop from caring about the difference.
+</Warning>
+
+Additional pitfalls:
+
+```text
+assuming OpenAI-compatible means full OpenAI feature parity
+placing timestamps or request IDs in the stable prefix (breaks caching)
+passing raw provider tokens to the model context
+relying on hosted-tool authorization for regulated or financial actions
+streaming partial tool call arguments to execution logic
+failing to log cache usage fields from response metadata
+changing tool schema order between requests without versioning
+```

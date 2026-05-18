@@ -1,81 +1,101 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
-icon: 'rocket'
+title: "Quickstart: Install and Use Agents Best Practices"
+description: "Learn how to install the Agents Best Practices skill and generate your first domain-specific MVP agent harness blueprint in under 5 minutes."
 ---
 
-## Get started in three steps
-
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+The Agents Best Practices skill gives your agent a provider-neutral reference for designing, auditing, and generating production-safe agentic harnesses. Once installed, the skill activates automatically when your conversation touches agent architecture, tool design, permissions, planning mode, context and memory, observability, or production readiness — across any domain from coding to finance, support, legal, and beyond.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  This skill is compatible with Codex, Claude Code, and other Agent Skill-aware runtimes that support the portable `SKILL.md` entrypoint.
 </Note>
+
+<Steps>
+  <Step title="Install the skill">
+    Run the following command in your terminal to install the skill at user level using the `skills` CLI:
+
+    ```bash
+    npx skills add DenisSergeevitch/agents-best-practices -g
+    ```
+
+    The `-g` flag installs globally so every project on your machine can discover the skill.
+  </Step>
+
+  <Step title="Verify the install">
+    After installation, confirm the following files are present in your agent's skills directory:
+
+    - `SKILL.md` — skill entry point and trigger rules
+    - `icon.jpeg` — skill image
+    - `references/` — directory containing all reference files (architecture, tools, permissions, evals, and more)
+
+    For Codex, check `~/.codex/skills/agents-best-practices/`. For Claude Code, check `~/.claude/skills/agents-best-practices/`.
+  </Step>
+
+  <Step title="Use with your agent">
+    The skill activates automatically when your prompt involves any of these intents:
+
+    - Build an agent, agentic workflow, AI worker, autonomous assistant, or harness
+    - Create a domain-specific MVP agent design, starter harness, implementation blueprint, or first production-safe version
+    - Choose between OpenAI, Anthropic, OpenAI-compatible APIs, direct tool loops, hosted tools, or SDKs
+    - Design tools, permissions, guardrails, approval flows, or sandboxing
+    - Create planning mode, goal mode, todo tracking, or long-running task behavior
+    - Add context compaction, memory, retrieval, scoped instructions, or prompt hierarchies
+    - Attach Agent Skills, reusable workflows, MCP servers, external connectors, or tool search
+    - Audit an existing agent for reliability, cost, prompt-cache hit rate, safety, latency, or observability
+    - Create system prompts or developer instructions for a domain-specific agent
+    - Make source-of-truth knowledge, validation signals, logs, metrics, or workflow state legible to an agent
+
+    No special command is needed — just describe your agent design problem and the skill activates.
+  </Step>
+
+  <Step title="Generate your first MVP blueprint">
+    Ask your agent to build a domain-specific harness. The skill enters MVP Builder Mode and produces a concrete blueprint — not just advice.
+
+    **Example prompt:**
+
+    ```text
+    Build an agent for account renewal risk. It should read CRM,
+    support tickets, and usage data, then draft renewal actions.
+    ```
+
+    **Example response:**
+
+    ```text
+    Start with an approval-gated Level 2 harness.
+    The MVP has one job: produce a renewal-risk brief plus draft
+    next actions for a human account owner.
+
+    Core loop:
+      user/task -> context builder -> model call -> typed tool call
+      -> schema validation -> permission check -> execution or pause
+      -> structured observation -> next step or final brief
+
+    Minimal tools:
+      - read_account_profile      read_private_data
+      - list_support_tickets      read_private_data
+      - fetch_usage_summary       read_private_data
+      - draft_customer_email      draft_external_message
+      - request_approval          approval_gate
+
+    Launch gate:
+      20 historical accounts, trace review, no unapproved external
+      sends, and human acceptance on at least 80% of draft actions.
+    ```
+
+    The primary reference driving this output is `references/mvp-agent-blueprint.md`.
+  </Step>
+</Steps>
+
+<CardGroup cols={2}>
+  <Card title="Installation guide" icon="download" href="/installation">
+    All three install methods: npx skills CLI, agent prompt, and manual git clone.
+  </Card>
+  <Card title="MVP blueprint" icon="map" href="/guides/mvp-blueprint">
+    How the skill generates domain-specific MVP harness blueprints.
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    Full harness model: loop, components, and boundaries.
+  </Card>
+  <Card title="Tools and permissions" icon="shield-check" href="/guides/tools-and-permissions">
+    Typed tools, risk classes, approval flows, and sandboxing.
+  </Card>
+</CardGroup>

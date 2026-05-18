@@ -1,0 +1,90 @@
+{
+  "projectType": "general",
+  "projectName": "Agents Best Practices",
+  "projectDescription": "A provider-neutral Agent Skill that guides designing, generating MVP blueprints for, auditing, and refactoring agentic harnesses for OpenAI, Anthropic, and OpenAI-compatible APIs.",
+  "theme": "luma",
+  "primaryColor": "#94cb04",
+  "lightColor": "#545454",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/agentic-loop",
+              "concepts/autonomy-levels"
+            ]
+          },
+          {
+            "group": "Building Agents",
+            "pages": [
+              "guides/mvp-blueprint",
+              "guides/tools-and-permissions",
+              "guides/planning-and-goals",
+              "guides/context-and-memory",
+              "guides/system-prompts"
+            ]
+          },
+          {
+            "group": "Advanced Topics",
+            "pages": [
+              "guides/skills-and-connectors",
+              "guides/prompt-caching-and-cost",
+              "guides/provider-api-patterns",
+              "guides/agent-legibility"
+            ]
+          },
+          {
+            "group": "Production",
+            "pages": [
+              "production/security-evals-observability",
+              "production/checklists",
+              "production/source-links"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Provider-neutral agent harness design (OpenAI, Anthropic, OpenAI-compatible APIs)",
+    "MVP agent blueprint generator for any domain",
+    "Typed tool registry with risk-class-based permission model",
+    "Planning mode, goal loops, and approval-gated execution",
+    "Context assembly, memory, retrieval, and auto-compaction",
+    "Agent Skills and MCP/external connector governance",
+    "Prompt-cache-aware context layout and cost telemetry",
+    "Security, evals, observability, and production launch gates",
+    "Compatible with Codex, Claude Code, and other Agent Skill-aware runtimes",
+    "Applicable across coding, research, finance, legal, healthcare, and operations domains"
+  ],
+  "publicApiSurface": [
+    "SKILL.md — skill entry point and trigger rules",
+    "references/mvp-agent-blueprint.md — domain-specific MVP harness blueprint",
+    "references/architecture.md — component model and harness boundaries",
+    "references/agentic-loop.md — loop invariants, retries, budgets, stopping",
+    "references/tools-and-permissions.md — typed tools, risk classes, approvals",
+    "references/planning-and-goals.md — planning mode and long-running goals",
+    "references/context-memory-compaction.md — context, memory, retrieval, compaction",
+    "references/prompt-caching-and-cost.md — stable prefixes and cost-aware context",
+    "references/skills-and-connectors.md — Agent Skills, MCP, connectors, tool search",
+    "references/system-prompts-instructions.md — instruction hierarchy and templates",
+    "references/provider-api-patterns.md — OpenAI, Anthropic, compatible API patterns",
+    "references/security-evals-observability.md — guardrails, tracing, evals, launch gates",
+    "references/agent-legibility-feedback-loops.md — source-of-truth artifacts and cleanup",
+    "references/checklists.md — implementation and audit checklists",
+    "references/source-links.md — official references and further reading"
+  ]
+}

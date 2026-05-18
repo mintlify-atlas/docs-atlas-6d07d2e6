@@ -1,0 +1,178 @@
+---
+title: "Agent-Legible Environments, Source of Truth, and Feedback"
+description: "How to build source-of-truth knowledge bases, validation signals, and recurring cleanup loops so agents can read and act on authoritative state."
+---
+
+A harness is not only a prompt and a set of tools. It is an operating environment — and the quality of that environment determines what the agent can actually do. If the agent cannot inspect, retrieve, validate, or act on a piece of information through approved tools, that information is operationally absent from the agent's world. Building agent-legible environments means encoding durable knowledge into retrievable, versioned artifacts and giving the agent the tools to read and validate authoritative state at runtime.
+
+## What Agent Legibility Means
+
+An agent-legible environment is one where the agent can read canonical, up-to-date state from authoritative sources through approved tools. This applies across every domain:
+
+```text
+support agent:  ticket history, customer state, escalation policy, response examples
+finance agent:  ledger state, approval policy, reconciliation rules, audit trail
+legal agent:    contract repository, clause library, jurisdiction rules, redline history
+research agent: source corpus, extraction rubric, citation rules, review checklist
+ops agent:      incidents, runbooks, metrics, logs, service topology, rollback policy
+sales agent:    account plans, CRM state, product constraints, call notes, approval rules
+```
+
+Do not rely on tacit knowledge in chat threads, meetings, private documents, or people's heads. Encode durable knowledge into retrievable, versioned artifacts that the agent can discover and act on consistently across sessions.
+
+## Source-of-Truth Artifacts
+
+Use a short top-level instruction file as a map, not as an encyclopedia. The main instruction should point to deeper, structured references that are loaded only when needed.
+
+**Recommended knowledge base layout:**
+
+```text
+agent-instructions.md      # short map and rules
+architecture.md            # domain model and major boundaries
+policies/                  # authority, compliance, escalation, safety
+runbooks/                  # operational procedures
+plans/active/              # current plans and execution logs
+plans/completed/           # completed plans and decisions
+references/                # external or generated reference material
+generated/                 # generated schemas, API inventories, catalogues
+quality/                   # scorecards, known gaps, audit status
+evals/                     # task fixtures and regression cases
+```
+
+Each document should carry enough metadata to remain useful over time:
+
+```text
+owner
+last_reviewed
+scope
+source_of_truth
+verification_status
+related_docs
+known_staleness_risks
+```
+
+Version plans, decisions, quality reports, and generated references where possible. A durable local artifact is easier for an agent to discover and reuse than a prior chat discussion, which the agent cannot access.
+
+## Validation Signals
+
+For each domain, define the signals that prove a task is complete or correct. These signals should be inspectable through tools — not reliant on a human manually copying data into the prompt:
+
+```text
+support:  customer reply drafted, policy citations present, PII redacted
+finance:  ledger balances reconcile, approval attached, audit event written
+legal:    clause changes mapped to source request, risk flags reviewed
+ops:      incident mitigated, metric recovered, postmortem draft created
+research: sources screened, extraction table complete, citations verified
+sales:    account brief prepared, risks ranked, next steps approved
+```
+
+A mature harness exposes the environment through approved tools that surface these signals:
+
+```text
+read source-of-truth records
+search policies and documentation
+query logs, metrics, traces, or audit events
+inspect current workflow state
+capture screenshots or structured UI state when relevant
+run validation checks
+produce evidence artifacts
+compare before/after state
+```
+
+## Mechanical Invariants
+
+Documentation alone does not keep an agentic system coherent. Recurring guidance that appears only in prompts is fragile — it can be forgotten, misinterpreted, or silently violated. Convert recurring guidance into mechanical checks enforced by the harness:
+
+```text
+schema validators
+policy checkers
+lint rules
+structural tests
+approval matrix checks
+PII and secret scanners
+source-citation validators
+freshness checks
+workflow-state validators
+cost and latency budgets
+regression evals
+```
+
+Validators are most useful when they produce remediation messages that are safe to show to the model:
+
+```text
+Violation: External customer email has no approval record.
+Fix: Call request_approval with action_type="external_send" and include the email preview.
+```
+
+Centralize boundaries and correctness rules. Allow local autonomy only inside those boundaries.
+
+## Feedback Capture
+
+<Tip>
+  When the same prompt failure recurs more than once, the fix belongs in documentation, a validator, or an eval — not as additional prompt advice. Prompt advice is easy to add and easy to forget. A validator that rejects the bad output is permanent.
+</Tip>
+
+Treat every run as a feedback opportunity. The standard loop is:
+
+<Steps>
+  <Step title="Validate current state">
+    Before acting, confirm the current state is readable and matches expectations. Use tools to query source-of-truth records, not cached assumptions.
+  </Step>
+  <Step title="Gather source-of-truth context">
+    Load the authoritative context for the task — policies, runbooks, plans, generated references — through the approved tool set.
+  </Step>
+  <Step title="Produce a plan or action proposal">
+    Generate a bounded plan based on the current state and the available context. Surface judgment calls rather than resolving them silently.
+  </Step>
+  <Step title="Execute within permission policy">
+    Execute only the actions approved by the permission policy. Route high-risk operations through approval gates.
+  </Step>
+  <Step title="Validate the result">
+    After execution, validate the result against the objective using the domain-specific validation signals. Do not rely on the model's self-assessment alone.
+  </Step>
+  <Step title="Capture proof and evidence">
+    Record the evidence that the task succeeded — reconciliation records, approval receipts, diff artifacts, citations, screenshots.
+  </Step>
+  <Step title="Record and feed back">
+    Record progress, failures, and decisions in the plan or audit trail. Feed recurring issues — repeated failures, ambiguities, gaps — into docs, tools, policies, or evals so the fix compounds.
+  </Step>
+</Steps>
+
+When the agent fails, do not only rewrite the prompt. Ask which missing component caused the failure:
+
+```text
+missing instruction
+missing source of truth
+missing tool
+missing validator
+missing permission rule
+missing sandbox signal
+missing eval
+missing recovery path
+```
+
+Then encode the fix into the harness, documentation, tools, tests, or evaluations.
+
+## Recurring Cleanup
+
+Agents replicate existing patterns, including bad ones. Without cleanup, stale rules, mediocre examples, and weak abstractions compound over time.
+
+Run recurring garbage-collection workflows on a scheduled basis:
+
+```text
+scan for stale documentation
+identify repeated tool failures
+find low-quality examples that agents imitate
+remove unused tools and skills
+update quality scorecards
+merge duplicate instructions
+retire obsolete workflows
+convert repeated review comments into checks
+refresh source-of-truth indexes
+```
+
+<Warning>
+  Risk-tiered review keeps human attention focused where it matters. Use automated validation and sampling for low-risk operations, automated validation plus targeted human review for medium-risk, and explicit human approval before execution for high-risk or regulated operations.
+</Warning>
+
+Maintain a small set of golden principles. Make them enforceable wherever possible. The strongest harnesses enforce boundaries mechanically and reserve human attention for judgment, policy exceptions, high-risk commits, and unresolved ambiguity — not for routine verification that a validator could handle.

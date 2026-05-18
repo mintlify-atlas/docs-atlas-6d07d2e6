@@ -1,0 +1,253 @@
+---
+title: "Designing Typed Tools and Runtime Permission Models"
+description: "How to design narrow typed tools, assign risk classes, and build runtime permission checks that keep the model from becoming an unaudited operator."
+---
+
+A tool is a contract between the model and the harness. The model sees the contract; the harness owns execution. Poorly designed tools — too broad, lacking schemas, or missing permission checks — turn the model into an unaudited operator with unchecked side effects. Well-designed tools are narrow, typed, and scoped: they express exactly what they do, what they require, what they risk, and what they return. The permission model lives in the harness runtime, not in the prompt. Both are required.
+
+## Tool contract
+
+Every tool must declare the following:
+
+```text
+name
+purpose
+input schema
+output schema
+risk class
+side-effect class
+resource scope
+permission policy
+timeout
+result-size limit
+retry policy
+audit policy
+error format
+```
+
+Avoid broad tools. Prefer narrow tools with domain semantics.
+
+<Warning>
+These anti-patterns give the model unchecked authority and make permission enforcement impossible:
+
+```text
+execute_anything(command)
+call_api(url, method, body)
+update_database(sql)
+send_message(payload)
+```
+
+Replace them with narrow typed tools:
+
+```text
+search_policy_docs(query, max_results)
+read_customer_account(account_id)
+draft_customer_email(case_id, tone)
+request_refund_approval(order_id, amount, reason)
+apply_approved_refund(approval_id)
+```
+</Warning>
+
+Use strict JSON schemas. Mark required fields explicitly, reject unknown properties, use enums for constrained choices, and validate locally before execution.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "record_id": { "type": "string" },
+    "new_status": {
+      "type": "string",
+      "enum": ["open", "pending", "resolved"]
+    },
+    "reason": { "type": "string" }
+  },
+  "required": ["record_id", "new_status", "reason"],
+  "additionalProperties": false
+}
+```
+
+## Risk classes
+
+Classify every tool into one of the following risk classes. The tool registry exposes this metadata to the permission engine.
+
+<AccordionGroup>
+  <Accordion title="read_only / search_only / compute_only">
+    Tools that retrieve or compute without persisting side effects. Examples: `search_knowledge_base`, `read_customer_account`, `list_support_tickets`, `fetch_usage_summary`.
+
+    **Default permission:** allow within scope.
+  </Accordion>
+
+  <Accordion title="draft_only / write_local">
+    Tools that produce output artifacts or local drafts without sending to external systems. Examples: `draft_customer_email`, `prepare_report`, `write_local_artifact`.
+
+    **Default permission:** allow when scoped.
+  </Accordion>
+
+  <Accordion title="write_internal">
+    Tools that update internal records in systems of record (CRM, ticketing, ERP). Examples: `apply_crm_update`, `update_ticket_status`.
+
+    **Default permission:** approval or explicit policy allowlist.
+  </Accordion>
+
+  <Accordion title="communication / write_external">
+    Tools that send messages, emails, or notifications to external parties. Examples: `send_customer_email`, `post_slack_message`.
+
+    **Default permission:** draft first, approval to send.
+  </Accordion>
+
+  <Accordion title="financial">
+    Tools that initiate or commit financial transactions. Examples: `issue_refund`, `place_trade`, `submit_payment`.
+
+    **Default permission:** approval plus strong authentication.
+  </Accordion>
+
+  <Accordion title="destructive">
+    Tools that delete, overwrite, or permanently remove data or resources. Examples: `delete_record`, `purge_workspace`, `drop_table`.
+
+    **Default permission:** deny by default, or approval plus a documented recovery path.
+  </Accordion>
+
+  <Accordion title="privileged_access / identity_access">
+    Tools that modify permissions, roles, credentials, or access controls. Examples: `grant_role`, `revoke_access`, `rotate_credentials`.
+
+    **Default permission:** approval plus strong authentication.
+  </Accordion>
+
+  <Accordion title="process_execution / network_open_world">
+    Tools that execute shell commands, run generated code, drive browsers, or make open-ended HTTP requests. Examples: `run_script`, `execute_browser_action`, `call_external_api`.
+
+    **Default permission:** sandbox plus allowlist plus timeout; approval for risky operations.
+  </Accordion>
+</AccordionGroup>
+
+## Permission decision flow
+
+The permission engine sits between schema validation and execution. It returns one of the following decisions:
+
+```text
+allow
+deny
+ask_user
+approval_required
+require_stronger_auth
+run_in_sandbox
+run_as_draft_only
+```
+
+Every decision is recorded with the tool name, argument hash, risk class, resource scope, policy rule, user/session ID, approver (if any), and timestamp.
+
+<Steps>
+  <Step title="Schema validation">
+    Validate the model's arguments against the tool's JSON schema locally before any permission check. Reject unknown properties and enforce required fields. Return an `invalid_arguments` error result if validation fails — do not reach the permission engine.
+  </Step>
+
+  <Step title="Permission check">
+    Pass the validated tool call and session context to the permission engine. The engine evaluates the risk class, resource scope, and active approval state. It returns a structured decision.
+  </Step>
+
+  <Step title="Execute or pause for approval">
+    - `allow` or `run_in_sandbox`: execute and return a structured result.
+    - `run_as_draft_only`: execute the draft variant; do not call the commit tool.
+    - `approval_required` or `ask_user`: pause the loop and surface the request to a human. Do not proceed until an approval record is created outside the prompt.
+    - `deny`: return a structured denial result with safe next steps. Continue the loop.
+  </Step>
+</Steps>
+
+## Draft/commit separation
+
+Split risky actions into two tools: a draft tool and a commit tool. Draft tools can often run automatically. Commit tools require an approval record unless the action is low-risk and explicitly allowlisted.
+
+```text
+draft_email           ->  send_email
+prepare_refund        ->  issue_refund
+propose_record_update ->  apply_record_update
+prepare_contract_change -> submit_contract_change
+recommend_trade       ->  place_trade
+stage_workflow_change ->  commit_workflow_change
+```
+
+This separation means the model can always produce a draft for human review, even when the commit step requires approval. The approval record is stored outside the prompt so it survives context compaction.
+
+## Structured tool results
+
+Every tool call must return a structured observation — including denials, errors, and timeouts. Never return raw blobs or unstructured text.
+
+**Success result:**
+
+```json
+{
+  "status": "success",
+  "summary": "Found 3 matching cases.",
+  "items": [
+    {
+      "id": "case_123",
+      "title": "Renewal blocker",
+      "evidence_ref": "crm://cases/case_123"
+    }
+  ],
+  "next_valid_actions": ["read_case", "draft_response"]
+}
+```
+
+**Error result:**
+
+```json
+{
+  "status": "error",
+  "type": "permission_denied",
+  "message": "Sending external email requires approval.",
+  "next_valid_actions": ["draft_email", "request_approval"]
+}
+```
+
+Set explicit limits on every result:
+
+```text
+max_result_chars
+max_items
+pagination cursor
+log tail length
+snippet length
+artifact storage reference
+```
+
+For large data, compute or filter inside the tool before returning to the model. The model should not receive 10,000 rows to count five relevant records.
+
+## Handling every failure type
+
+Every failure is a result. The loop must handle all of these as structured observations:
+
+```text
+unknown_tool
+invalid_arguments
+permission_denied
+approval_required
+auth_expired
+not_found
+timeout
+rate_limited
+conflict
+non_idempotent_retry_blocked
+internal_error
+```
+
+Each error should include safe next steps so the model can reason about what to do without hallucinating recovery paths.
+
+## Tool visibility
+
+<Warning>
+Do not expose every tool all the time. Large tool surfaces confuse the model and waste context.
+</Warning>
+
+Use progressive disclosure:
+
+```text
+base tools:       always visible
+task tools:       visible after task classification
+skill tools:      visible after skill selection
+connector tools:  visible after connector authorization
+deferred tools:   discoverable by search
+sensitive tools:  hidden until needed and approved
+```
+
+A good tool description states when to use the tool, when not to use it, required prerequisites, side effects, important error behavior, and examples of valid arguments. Keep descriptions concise — if a tool requires extensive documentation, expose a small discovery tool or reference resource rather than embedding all details in the tool description.

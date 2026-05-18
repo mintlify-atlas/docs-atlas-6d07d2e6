@@ -1,0 +1,231 @@
+---
+title: "Agent Harness Implementation, Design, and Audit Checklists"
+description: "Condensed checklists for MVP harness implementation, design review, tool audit, security audit, and pre-launch validation of agentic systems."
+---
+
+These checklists are designed to be used at three points in the agent development lifecycle: during initial design to catch structural gaps early, during implementation to verify each component meets the required standard, and during pre-launch audit to confirm the system is safe for production traffic. Work through each checklist in order — earlier checklists surface design decisions that later checklists assume are already resolved. Check off items as you complete them; any unchecked item at audit time should be treated as a known gap with an explicit deferral decision, not a silent omission.
+
+<AccordionGroup>
+  <Accordion title="MVP agent blueprint checklist">
+    - Domain, primary user, and job-to-be-done are stated.
+    - MVP scope, assumptions, non-goals, and deferred capabilities are explicit.
+    - Autonomy level is the lowest level that still creates value.
+    - Core model-tool-observation loop is specified.
+    - Step, tool-call, time, token, and cost budgets are specified.
+    - Minimal typed tool registry is defined.
+    - Permission matrix covers read, draft, write, external, financial, destructive, and privileged actions.
+    - Risky actions use draft/commit separation.
+    - Planning mode blocks mutation until approval.
+    - Goal-like loop has objective, checkpoints, budget, validation, and stop rules.
+    - Context builder separates stable/cacheable content from volatile state.
+    - Memory, plans, approvals, todos, and artifacts are stored outside the prompt.
+    - Auto-compaction summary format and rehydration rules are defined.
+    - Skills are progressively disclosed and permission-bounded.
+    - MCP/external connectors are namespaced, scoped, and logged.
+    - Prompt caching and cost telemetry are included.
+    - Traces and evals are defined before launch.
+    - First rollout is limited, monitored, or shadow-mode.
+  </Accordion>
+
+  <Accordion title="Design checklist">
+    - Domain and user persona defined.
+    - Autonomy level selected.
+    - Risk classes identified.
+    - Success and done conditions defined.
+    - Source-of-truth systems identified.
+    - Instruction hierarchy defined.
+    - Tool registry scoped to minimum viable tools.
+    - Permission matrix written.
+    - Draft/commit split defined for risky actions.
+    - Context builder designed.
+    - Memory and durable state plan defined.
+    - Compaction trigger and summary format defined.
+    - Planning mode criteria defined.
+    - Goal loop criteria and budgets defined.
+    - Skills and connector strategy defined.
+    - Observability and eval plan defined.
+  </Accordion>
+
+  <Accordion title="Tool checklist (for each tool)">
+    Apply this checklist independently to every tool in the registry before including it in production.
+
+    - Name is specific and domain meaningful.
+    - Purpose says when to use and when not to use.
+    - Input schema is strict.
+    - Output schema is structured.
+    - Arguments are locally validated.
+    - Risk class assigned.
+    - Side effects declared.
+    - Permission policy assigned.
+    - Timeout set.
+    - Result size limit set.
+    - Retry policy set.
+    - Audit policy set.
+    - Errors return structured observations.
+    - Sensitive data is redacted.
+  </Accordion>
+
+  <Accordion title="Permission checklist">
+    - Read-only tools can run automatically only inside scope.
+    - Draft tools are separated from commit tools.
+    - External sends require approval.
+    - Financial actions require approval and strong auth.
+    - Destructive actions are denied or approval-gated with recovery plan.
+    - Identity/access changes require approval and strong auth.
+    - Shell/process execution is sandboxed.
+    - Connector tools are namespaced and scoped.
+    - Approval records are persisted.
+    - The model cannot approve its own actions.
+  </Accordion>
+
+  <Accordion title="Context checklist">
+    - Trusted instructions separated from untrusted data.
+    - Scoped instructions loaded only when relevant.
+    - Retrieved content labeled by source and trust level.
+    - Exact facts preserved when needed.
+    - Large outputs summarized or stored externally.
+    - Active plan and goal reattached after compaction.
+    - Approval state reattached after compaction.
+    - Loaded skills and connector state tracked.
+    - Secrets are not placed in context.
+  </Accordion>
+
+  <Accordion title="Planning checklist">
+    - Planning mode exists for high-risk or ambiguous tasks.
+    - Mutation tools are blocked during planning.
+    - Plan artifact is stored outside prompt.
+    - Plan contains objective, scope, risks, steps, validation, rollback, and done condition.
+    - Approval tied to exact plan version.
+    - Execution uses todo/checkpoints after approval.
+  </Accordion>
+
+  <Accordion title="Goal checklist">
+    - Goal has one objective.
+    - Done condition is measurable.
+    - Budget is explicit.
+    - Validation method exists.
+    - Forbidden actions are listed.
+    - Approval-required actions are listed.
+    - Progress log is durable.
+    - Stop rules are explicit.
+  </Accordion>
+
+  <Accordion title="Skills checklist">
+    - Skill name matches directory name.
+    - Skill name is lowercase with hyphens only.
+    - `SKILL.md` has required frontmatter.
+    - Description says when to use the skill.
+    - Main instructions are concise.
+    - Detailed material is in focused Markdown references.
+    - References are loaded only when needed.
+    - Gotchas and validation steps are included.
+    - Skill activation eval exists.
+    - Output quality eval exists.
+    - Skill does not silently expand permissions.
+  </Accordion>
+
+  <Accordion title="MCP/external connector checklist">
+    - Servers/connectors inventoried.
+    - Tools namespaced by source.
+    - Credentials are per-user or scoped.
+    - Least privilege scopes used.
+    - Tool descriptions truncated or reviewed.
+    - External descriptions treated as untrusted.
+    - Risk classes mapped.
+    - Approval required for risky calls.
+    - Large results filtered before model context.
+    - Connector calls logged.
+    - Auth failure and revocation handled.
+  </Accordion>
+
+  <Accordion title="Evals checklist">
+    - Happy-path tasks.
+    - Near-miss tasks.
+    - Prompt injection tasks.
+    - Tool misuse tasks.
+    - Approval bypass attempts.
+    - Connector failure tasks.
+    - Context overflow and compaction tasks.
+    - Conflicting instruction tasks.
+    - High-risk action tasks.
+    - Cost and latency measured.
+    - Regression evals added for every production incident.
+  </Accordion>
+
+  <Accordion title="Agent legibility checklist">
+    - Top-level instructions are a map, not a giant manual.
+    - Source-of-truth documents are indexed and retrievable.
+    - Active and completed plans are stored as durable artifacts.
+    - Domain schemas, policies, and runbooks are agent-readable.
+    - Validation signals are accessible through approved tools.
+    - Logs, metrics, traces, audit events, or workflow status are queryable where relevant.
+    - Human feedback is converted into docs, tools, validators, or evals.
+    - Stale docs and obsolete tools have a cleanup process.
+    - Quality scorecards or known-gap trackers exist for large systems.
+  </Accordion>
+
+  <Accordion title="Prompt caching checklist">
+    - Stable instructions appear before volatile runtime state.
+    - Tool definitions and schemas are sorted deterministically.
+    - Dynamic values such as timestamps and request IDs are placed near the end or omitted.
+    - Prompt and tool bundle versions are tracked.
+    - Provider cached-token fields are logged.
+    - Cache hit rate is monitored by session and tenant or segment.
+    - System prompt and tool-list hashes are logged to detect fragmentation.
+    - Compaction boundaries are explicit.
+    - Summaries are not rewritten every turn.
+    - Long-retention cache settings are used only when reuse justifies them.
+  </Accordion>
+
+  <Accordion title="Mechanical invariant checklist">
+    - Repeated prompt guidance has been converted into validators where possible.
+    - Validator errors include model-readable remediation instructions.
+    - Architecture or workflow boundaries are enforced mechanically.
+    - Secret/PII/source-citation checks exist where relevant.
+    - Cost, latency, and tool-result-size budgets are enforced.
+    - Regression evals are added after production incidents.
+  </Accordion>
+</AccordionGroup>
+
+## Minimal provider-neutral implementation path
+
+Use this ordered path when building a new agent harness from scratch. Each step builds on the previous one — do not skip ahead to goal loops or subagents before the base harness passes evals.
+
+<Steps>
+  <Step title="Build the core loop">
+    Build a manual model-tool-observation loop with no framework magic. Understand the raw interaction before adding abstractions.
+  </Step>
+  <Step title="Add strict schemas and validation">
+    Add strict tool schemas and local argument validation before the tool executes. Structured tool results and error observations belong here too.
+  </Step>
+  <Step title="Add permission checks">
+    Add runtime permission checks keyed to each tool's risk class. Checks must be in code, not only in prompt instructions.
+  </Step>
+  <Step title="Add budgets and stop conditions">
+    Add step, token, time, and cost budgets with explicit stop conditions. The agent must stop cleanly when any budget is reached.
+  </Step>
+  <Step title="Add tracing">
+    Add structured trace logging for every model call, tool call, permission decision, and approval event.
+  </Step>
+  <Step title="Add prompt-cache-aware context ordering">
+    Order context so stable content (instructions, tool schemas) precedes volatile content (runtime state, retrieved data). Log cache telemetry.
+  </Step>
+  <Step title="Add planning mode">
+    Add planning mode for high-risk or ambiguous tasks. Block mutation tools during planning. Store plan artifacts outside the prompt.
+  </Step>
+  <Step title="Add context compaction">
+    Add a compaction trigger with a defined summary format and rehydration rules. Test that active objectives and approval state survive compaction.
+  </Step>
+  <Step title="Add skills">
+    Add skills for reusable workflows. Each skill must be permission-bounded and have activation and output quality evals.
+  </Step>
+  <Step title="Add external connectors">
+    Add MCP/external connectors with scoped permissions, namespaced tool names, and approval requirements for risky calls.
+  </Step>
+  <Step title="Add goal loops and subagents">
+    Add goal-like loops only after the base agent passes evals. Add subagents only when decomposition improves measured results.
+  </Step>
+  <Step title="Add maintenance workflows">
+    Add recurring knowledge-base and entropy cleanup workflows to prevent drift in instructions, tools, and stored state.
+  </Step>
+</Steps>

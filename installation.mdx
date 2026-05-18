@@ -1,0 +1,76 @@
+---
+title: "Install the Agents Best Practices Agent Skill"
+description: "Three ways to install the Agents Best Practices Agent Skill: npx skills CLI, manual git clone, or an agent prompt for Codex and Claude Code."
+---
+
+The Agents Best Practices skill is a portable `SKILL.md`-based Agent Skill that works with Codex, Claude Code, and other Agent Skill-aware runtimes. You can install it in under a minute using any of the three methods below — the `npx skills` CLI for the fastest path, an agent prompt to let your agent handle the install, or a manual `git clone` for full control over the install location.
+
+<Tabs>
+  <Tab title="npx skills">
+    Run the following command in your terminal:
+
+    ```bash
+    npx skills add DenisSergeevitch/agents-best-practices -g
+    ```
+
+    <Note>
+      The `-g` flag installs globally at user level so every project on your machine can discover the skill. Omit `-g` to install only for the current project.
+    </Note>
+  </Tab>
+
+  <Tab title="Agent prompt">
+    Paste the following prompt directly to your AI agent (Codex, Claude Code, or any compatible runtime):
+
+    ```text
+    Install the agents-best-practices skill for me:
+
+    1. Clone https://github.com/DenisSergeevitch/agents-best-practices into my
+       user-level skills directory as `agents-best-practices/`.
+       Use the skill directory my agent reads on this machine, for example:
+       - Codex: ~/.codex/skills/
+       - Claude Code: ~/.claude/skills/
+    2. Verify that SKILL.md, icon.jpeg, and the references/ directory are present.
+    3. Confirm the install path when done.
+    ```
+
+    Your agent will clone the repository into the correct skills directory and confirm the install path.
+  </Tab>
+
+  <Tab title="Manual git clone">
+    Clone the repository directly into your agent's skills directory. Choose the path for your runtime:
+
+    <CodeGroup>
+
+    ```bash Codex
+    mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+    git clone https://github.com/DenisSergeevitch/agents-best-practices.git \
+      "${CODEX_HOME:-$HOME/.codex}/skills/agents-best-practices"
+    ```
+
+    ```bash Claude Code (user-level)
+    mkdir -p "$HOME/.claude/skills"
+    git clone https://github.com/DenisSergeevitch/agents-best-practices.git \
+      "$HOME/.claude/skills/agents-best-practices"
+    ```
+
+    ```bash Claude Code (project-level)
+    mkdir -p .claude/skills
+    git clone https://github.com/DenisSergeevitch/agents-best-practices.git \
+      .claude/skills/agents-best-practices
+    ```
+
+    </CodeGroup>
+  </Tab>
+</Tabs>
+
+## Verify your install
+
+After installing, confirm the following files are present in the `agents-best-practices/` directory:
+
+- `SKILL.md` — skill entry point and trigger rules; the file your agent reads to activate the skill
+- `icon.jpeg` — skill image used by compatible runtimes
+- `references/` — directory containing all reference files, including `mvp-agent-blueprint.md`, `architecture.md`, `tools-and-permissions.md`, and more
+
+<Tip>
+  Ready to generate your first MVP agent harness blueprint? Head to the [quickstart guide](/quickstart).
+</Tip>

@@ -1,0 +1,263 @@
+---
+title: "The Agentic Loop: Invariants, Budgets, and Stopping"
+description: "How the provider-neutral model-tool-observation loop works, including step budgets, retry logic, loop variants, and termination conditions."
+---
+
+The agentic loop is the repeating cycle at the heart of every agent harness. Understanding its structure — and encoding its invariants in code rather than in prompt text — is what separates reliable production agents from fragile demos. The loop is provider-neutral: it works the same way whether you use OpenAI, Anthropic, or any OpenAI-compatible API.
+
+## The core loop
+
+Every agent harness runs a variant of this loop. The model never executes a tool directly; it emits a structured request and the harness decides what to do with it.
+
+```text
+user/task
+  -> instruction and context builder
+  -> model call
+  -> tool/action proposal
+  -> schema validation
+  -> permission decision
+  -> execution or approval pause
+  -> structured observation
+  -> context update
+  -> repeat within budget or finish
+```
+
+The canonical implementation in pseudocode:
+
+```python
+def run_agent(task, session):
+    session.add_user_message(task)
+
+    for step in range(session.max_steps):
+        context = context_builder.build(session)
+
+        if budget.exceeded(session):
+            return stop("budget_exceeded", session)
+
+        if compactor.should_compact(context, session):
+            session = compactor.compact(session)
+            context = context_builder.build(session)
+
+        output = model.generate(
+            context=context,
+            tools=tool_registry.visible_tools(session),
+        )
+        session.record_model_output(output)
+
+        if output.final_answer:
+            return finalize(output.final_answer, session)
+
+        if not output.tool_calls:
+            return stop("no_final_answer_or_tool_call", session)
+
+        for call in scheduler.order(output.tool_calls):
+            result = handle_tool_call(call, session)
+            session.add_tool_result(call.id, result)
+
+    return stop("step_limit_reached", session)
+```
+
+Each tool call is handled by a dedicated function that validates, checks permissions, and either executes or pauses:
+
+```python
+def handle_tool_call(call, session):
+    tool = tool_registry.get(call.name)
+    if tool is None:
+        return error_result("unknown_tool", call.name)
+
+    try:
+        args = tool.validate(call.arguments)
+    except ValidationError as exc:
+        return error_result("invalid_arguments", str(exc))
+
+    decision = permission_engine.evaluate(tool, args, session)
+
+    if decision.type == "deny":
+        return denied_result(decision.reason)
+
+    if decision.type == "approval_required":
+        return pause_for_approval(call, decision, session)
+
+    if decision.type == "sandbox":
+        return sandbox.execute(tool, args)
+
+    return tool.execute(args)
+```
+
+## Loop invariants
+
+These invariants must be enforced in code, not described in prompts.
+
+<AccordionGroup>
+  <Accordion title="Every tool call receives exactly one result">
+    Whether the call succeeds, fails, is denied, times out, or is cancelled — the harness must return a structured result. The model cannot reason correctly about missing results.
+  </Accordion>
+  <Accordion title="Arguments are validated before execution">
+    Parse and validate tool arguments against the schema before calling the tool. Return a structured validation error if arguments are malformed.
+  </Accordion>
+  <Accordion title="A permission decision precedes every side effect">
+    No tool with side effects runs without an explicit allow, deny, or approval-required decision from the permission engine.
+  </Accordion>
+  <Accordion title="Tool results are bounded, structured, and traceable">
+    Results have a known maximum size, a typed structure the model can parse, and a corresponding trace event.
+  </Accordion>
+  <Accordion title="The loop has hard budgets">
+    Step, time, token, cost, and tool-call budgets are enforced mechanically — not by hoping the model will stop.
+  </Accordion>
+  <Accordion title="The final answer is based on observations">
+    The model must derive its final answer from actual tool results, not assumed success. Errors and denials are real observations.
+  </Accordion>
+  <Accordion title="Errors and denials become structured observations">
+    Errors, denials, cancellations, and timeouts are not silently swallowed. They are returned to the model as structured observations so it can adjust.
+  </Accordion>
+</AccordionGroup>
+
+## Budget types
+
+All budgets should be configured explicitly and enforced before each step. When any budget is reached, the loop stops with a clear status:
+
+```json
+{
+  "status": "stopped",
+  "reason": "step_limit_reached",
+  "completed": false,
+  "next_safe_action": "Ask the user whether to continue with a larger budget."
+}
+```
+
+The full set of budgets to configure:
+
+```text
+max_model_turns
+max_tool_calls
+max_parallel_tool_calls
+max_wall_time_seconds
+max_input_tokens
+max_output_tokens
+max_total_cost
+max_tool_result_chars
+max_retries_per_model_call
+max_retries_per_tool_call
+```
+
+## Retry policy
+
+<Tabs>
+  <Tab title="Safe to retry">
+    - Transient model API errors
+    - Network timeouts for read-only calls
+    - Idempotent retrieval
+    - Validation errors after the model corrects malformed arguments
+  </Tab>
+  <Tab title="Do not auto-retry">
+    - Payments
+    - External sends (email, webhooks)
+    - Destructive actions
+    - Permission changes
+    - Operations with unclear idempotency
+
+    For high-risk operations, use idempotency keys and approval records instead of automatic retries.
+  </Tab>
+</Tabs>
+
+## Parallelization
+
+<Tabs>
+  <Tab title="Safe to parallelize">
+    Independent, read-only, concurrency-safe tool calls:
+
+    - Search
+    - Read
+    - Retrieve metadata
+    - Classify independent records
+    - Summarize independent documents
+  </Tab>
+  <Tab title="Must serialize">
+    - Writes
+    - Sends
+    - Deletes
+    - Financial actions
+    - Permission changes
+    - Shell or process execution
+    - Multi-step external workflow commits
+  </Tab>
+</Tabs>
+
+## Loop variants
+
+<AccordionGroup>
+  <Accordion title="Single-turn loop">
+    The model receives context, produces a final answer or a single round of tool calls, and terminates. Appropriate for Q&A, drafting, and retrieval-augmented lookup. No persistent state required between calls.
+  </Accordion>
+  <Accordion title="Multi-turn session loop">
+    The loop continues across multiple user interactions within a session. State persists in a session store. The context builder reattaches relevant history, plan state, and memory on each turn.
+  </Accordion>
+  <Accordion title="Goal loop (long-running)">
+    A goal loop is a long-running version of the standard loop used when the agent must work toward a measurable objective across many steps or sessions. It requires additional state:
+
+    ```text
+    objective
+    done condition
+    budget
+    checkpoints
+    current plan
+    progress log
+    validation method
+    stop rules
+    ```
+
+    The loop should periodically ask:
+    1. Is the objective still valid?
+    2. What evidence proves progress?
+    3. Are we within budget?
+    4. Is the done condition met?
+    5. Is human approval needed before the next step?
+    6. Should compaction or handoff happen now?
+
+    Goal loops should not be used for vague backlogs or unrelated tasks.
+  </Accordion>
+  <Accordion title="Human-in-the-loop (approval pause)">
+    Sensitive actions pause the loop pending human or policy review:
+
+    ```text
+    model requests action
+      -> harness validates
+      -> harness detects approval requirement
+      -> harness emits approval request
+      -> user or policy approves/rejects
+      -> harness resumes with approval_result
+    ```
+
+    Approval must be scoped to the exact action. Do not treat vague consent as blanket authorization.
+  </Accordion>
+</AccordionGroup>
+
+## Stopping conditions
+
+Stop the loop when any of these conditions is true:
+
+- Final answer produced
+- Done condition satisfied
+- User approval is required and has not been granted
+- A blocker requires user input
+- Any budget is reached
+- Repeated failure threshold reached
+- Safety policy denies the task
+- A required tool or connector is unavailable with no safe fallback
+
+## Provider-neutral implementation notes
+
+<AccordionGroup>
+  <Accordion title="OpenAI Responses-style APIs">
+    Represent model outputs as typed items. Use previous response or conversation state if appropriate for your session management strategy.
+  </Accordion>
+  <Accordion title="Chat Completions-style and OpenAI-compatible APIs">
+    Maintain message history manually. Append tool result messages with matching call IDs after each tool execution.
+  </Accordion>
+  <Accordion title="Anthropic APIs">
+    Handle structured tool-use blocks in the response and return corresponding tool-result blocks in the next message.
+  </Accordion>
+  <Accordion title="All providers">
+    Regardless of provider, keep application-side validation, permissioning, and audit logs outside the model. The loop structure is the same; only the wire format changes.
+  </Accordion>
+</AccordionGroup>
